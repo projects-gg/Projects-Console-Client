@@ -511,8 +511,10 @@ namespace MinecraftClient
                 Console.Title = Config.AppVar.ExpandVars(Config.Main.Advanced.ConsoleTitle);
             }
 
-            // Check for updates
-            UpgradeHelper.CheckUpdate();
+            // Check for updates. A hosted instance is versioned and updated by its launcher,
+            // so it must not reach out to GitHub or offer an interactive upgrade prompt.
+            if (!ChatBots.LauncherBridge.Enabled)
+                UpgradeHelper.CheckUpdate();
 
             // Load command-line arguments
             if (args.Length >= 1)
@@ -1013,6 +1015,13 @@ namespace MinecraftClient
         {
             bool autoRelogHandled = false;
 
+            ChatBots.LauncherBridge.Emit("error", new()
+            {
+                ["msg"] = errorMessage,
+                ["reason"] = disconnectReason?.ToString(),
+                ["versionError"] = versionError,
+            });
+
             if (!string.IsNullOrEmpty(errorMessage))
             {
                 ConsoleIO.Reset();
@@ -1136,16 +1145,20 @@ namespace MinecraftClient
             }
             else
             {
-                // Not in interactive mode, just exit and let the calling script handle the failure
-                if (disconnectReason.HasValue)
+                // Not in interactive mode, just exit and let the calling script handle the failure.
+                // Exit() dispatches to a background thread and returns, so the specific exit code
+                // has to be chosen up front: falling through to a second Exit() call would race a
+                // Environment.Exit(0) against it and lose the failure code.
+                int exitCode = disconnectReason switch
                 {
-                    // Return distinct exit codes for known failures.
-                    if (disconnectReason.Value == ChatBot.DisconnectReason.UserLogout) Exit(1);
-                    if (disconnectReason.Value == ChatBot.DisconnectReason.InGameKick) Exit(2);
-                    if (disconnectReason.Value == ChatBot.DisconnectReason.ConnectionLost) Exit(3);
-                    if (disconnectReason.Value == ChatBot.DisconnectReason.LoginRejected) Exit(4);
-                }
-                Exit();
+                    ChatBot.DisconnectReason.UserLogout => 1,
+                    ChatBot.DisconnectReason.InGameKick => 2,
+                    ChatBot.DisconnectReason.ConnectionLost => 3,
+                    ChatBot.DisconnectReason.LoginRejected => 4,
+                    _ => 0,
+                };
+
+                Exit(exitCode);
             }
 
         }

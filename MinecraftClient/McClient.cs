@@ -656,6 +656,8 @@ namespace MinecraftClient
             if (Config.ChatBot.McpServer.Enabled) { BotLoad(new McpServer()); }
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MCC_FILE_INPUT")))
                 BotLoad(new FileInputBot());
+            if (LauncherBridge.Enabled)
+                BotLoad(new LauncherBridge());
         }
 
         /// <summary>
