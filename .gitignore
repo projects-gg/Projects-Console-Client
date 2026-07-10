@@ -417,6 +417,9 @@ FodyWeavers.xsd
 /MinecraftClient/Resources/Translations/Translations.*.resx
 /MinecraftClient/Resources/AsciiArt/AsciiArt.*.resx
 /MinecraftClient/Resources/ConfigComments/ConfigComments.*.resx
+# Turkish is a committed, built-in locale (default UI language), not Crowdin-managed
+!/MinecraftClient/Resources/Translations/Translations.tr.resx
+!/MinecraftClient/Resources/ConfigComments/ConfigComments.tr.resx
 
 /docs/.vuepress/translations/*.json
 !/docs/.vuepress/translations/en.json
@@ -445,3 +448,8 @@ server.pid
 
 # Crowdin translation automation working directory
 /.crowdin-translate/
+execlaude.bat
+/graphify-out
+/MinecraftClient/graphify-out
+CLAUDE.md
+AGENTS.md

@@ -1733,13 +1733,6 @@ namespace MinecraftClient
                     set { ChatBots.AutoEat.Config = value; ChatBots.AutoEat.Config.OnSettingUpdate(); }
                 }
 
-                [TomlPrecedingComment("$ChatBot.AutoFishing$")]
-                public ChatBots.AutoFishing.Configs AutoFishing
-                {
-                    get { return ChatBots.AutoFishing.Config; }
-                    set { ChatBots.AutoFishing.Config = value; ChatBots.AutoFishing.Config.OnSettingUpdate(); }
-                }
-
                 [TomlPrecedingComment("$ChatBot.AutoRelog$")]
                 public ChatBots.AutoRelog.Configs AutoRelog
                 {

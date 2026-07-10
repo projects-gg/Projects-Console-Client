@@ -637,7 +637,6 @@ namespace MinecraftClient
             if (Config.ChatBot.AutoDig.Enabled) { BotLoad(new AutoDig()); }
             if (Config.ChatBot.AutoDrop.Enabled) { BotLoad(new AutoDrop()); }
             if (Config.ChatBot.AutoEat.Enabled) { BotLoad(new AutoEat()); }
-            if (Config.ChatBot.AutoFishing.Enabled) { BotLoad(new AutoFishing()); }
             if (Config.ChatBot.AutoRelog.Enabled) { BotLoad(new AutoRelog()); }
             if (Config.ChatBot.AutoRespond.Enabled) { BotLoad(new AutoRespond()); }
             if (Config.ChatBot.ChatLog.Enabled) { BotLoad(new ChatLog()); }

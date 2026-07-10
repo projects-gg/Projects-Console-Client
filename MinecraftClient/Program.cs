@@ -78,6 +78,17 @@ namespace MinecraftClient
         /// </summary>
         static void Main(string[] args)
         {
+            // Make Turkish the default interface language. MCC's own UI strings are
+            // resolved by ResourceManager against the current UI culture, so forcing
+            // it here selects the committed Turkish satellite resources while English
+            // (the neutral .resx) stays as the fallback for anything untranslated.
+            // Only the UI culture is set; the formatting culture is left untouched so
+            // string casing (ToLower/ToUpper) keeps its system/invariant behavior and
+            // the Turkish dotless-'i' does not leak into logins, commands or parsing.
+            CultureInfo turkishUiCulture = new("tr-TR");
+            CultureInfo.DefaultThreadCurrentUICulture = turkishUiCulture;
+            CultureInfo.CurrentUICulture = turkishUiCulture;
+
             // [SENTRY] Initialize Sentry SDK only if the DSN is not empty
             if (SentryDSN != string.Empty)
             {

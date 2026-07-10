@@ -1,0 +1,1028 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AppVars.Variables" xml:space="preserve">
+    <value>diğer bazı alanlarda %yourvar% şeklinde kullanılabilir
+%username%, %login%, %serverip%, %serverport%, %datetime% ve %players% ayrılmış salt okunur değişkenlerdir.</value>
+  </data>
+  <data name="ChatBot" xml:space="preserve">
+    <value>=============================== #
+ Minecraft Console Client Botları #
+=============================== #</value>
+  </data>
+  <data name="ChatBot.Alerts" xml:space="preserve">
+    <value>Sohbette belirtilen kelimeler algılandığında uyarı alın
+Sunucunuzu denetlemek veya birinin sizinle konuştuğunu fark etmek için kullanışlıdır</value>
+  </data>
+  <data name="ChatBot.Alerts.Beep_Enabled" xml:space="preserve">
+    <value>Bir kelime algılandığında vurgulamaya ek olarak bir bip sesi çal.</value>
+  </data>
+  <data name="ChatBot.Alerts.Excludes" xml:space="preserve">
+    <value>Sizi UYARMAYACAĞI kelimelerin/dizelerin listesi.</value>
+  </data>
+  <data name="ChatBot.Alerts.Log_File" xml:space="preserve">
+    <value>Uyarı günlüklerinin yazılacağı dosyanın adı.</value>
+  </data>
+  <data name="ChatBot.Alerts.Log_To_File" xml:space="preserve">
+    <value>Uyarıları bir dosyaya kaydet.</value>
+  </data>
+  <data name="ChatBot.Alerts.Matches" xml:space="preserve">
+    <value>Sizi uyaracağı kelimelerin/dizelerin listesi.</value>
+  </data>
+  <data name="ChatBot.Alerts.Trigger_By_Rain" xml:space="preserve">
+    <value>Yağmur başladığında ve durduğunda uyarıları tetikle.</value>
+  </data>
+  <data name="ChatBot.Alerts.Trigger_By_Thunderstorm" xml:space="preserve">
+    <value>Gök gürültülü fırtınaların başında ve sonunda uyarıları tetikler.</value>
+  </data>
+  <data name="ChatBot.Alerts.Trigger_By_Words" xml:space="preserve">
+    <value>Belirtilen bir anahtar kelime alındığında bir uyarı tetikler.</value>
+  </data>
+  <data name="ChatBot.AntiAfk" xml:space="preserve">
+    <value>Otomatik AFK bağlantı kesilmesini önlemek için düzenli veya rastgele aralıklarla bir komut gönderin ya da botu rastgele dolaştırın
+/!\ Sunucu kurallarınızın anti-AFK mekanizmalarını yasaklamadığından emin olun!
+/!\ Arazi işlemeyi kullanıyorsanız, botun uzaklaşmasını önlemek için onu kapalı bir alanda tuttuğunuzdan emin olun! (Önerilen boyut 5x5x5)</value>
+  </data>
+  <data name="ChatBot.AntiAfk.Command" xml:space="preserve">
+    <value>Sunucuya gönderilecek komut.</value>
+  </data>
+  <data name="ChatBot.AntiAfk.Delay" xml:space="preserve">
+    <value>Çalıştırma için zaman aralığı. (saniye cinsinden)</value>
+  </data>
+  <data name="ChatBot.AntiAfk.Use_Sneak" xml:space="preserve">
+    <value>Komut gönderilirken eğilip eğilmeyeceği.</value>
+  </data>
+  <data name="ChatBot.AntiAfk.Use_Terrain_Handling" xml:space="preserve">
+    <value>Botun dolaşabilmesi için arazi işlemeyi kullan.</value>
+  </data>
+  <data name="ChatBot.AntiAfk.Walk_Range" xml:space="preserve">
+    <value>Botun rastgele dolaşabileceği menzil (Not: menzil ne kadar büyükse bot o kadar yavaş olur)</value>
+  </data>
+  <data name="ChatBot.AntiAfk.Walk_Retries" xml:space="preserve">
+    <value>Bot, komut yöntemini kullanmadan önce hareket etmeye çalışırken kaç kez başarısız olabilir.</value>
+  </data>
+  <data name="ChatBot.AutoAttack" xml:space="preserve">
+    <value>Çevrenizdeki düşman yaratıklara otomatik olarak saldırın
+Bu botu kullanmak için Varlık İşlemeyi (Entity Handling) etkinleştirmeniz gerekir
+/!\ Sunucu kurallarının AutoAttack'i planladığınız şekilde kullanmanıza izin verdiğinden emin olun
+/!\ SUNUCU EKLENTİLERİ AutoAttack'i bir HİLE MODU olarak değerlendirip HESABINIZA KARŞI İŞLEM YAPABİLİR, bu yüzden SUNUCU KURALLARINI İYİCE KONTROL EDİN!</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Attack_Hostile" xml:space="preserve">
+    <value>Düşman yaratıklara saldırmaya izin ver.</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Attack_Passive" xml:space="preserve">
+    <value>Pasif yaratıklara saldırmaya izin ver.</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Attack_Range" xml:space="preserve">
+    <value>1 ile 4 arasında sınırlıdır</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Cooldown_Time" xml:space="preserve">
+    <value>Saldırılar arasındaki gecikme. MCC'nin hesaplaması için "Custom = false" olarak ayarlayın. Custom = true olduğunda, bekleme aralığı için Min/Max değerlerini ayarlayın. RandomMode = true ise, her saldırı için Min ve Max arasında rastgele bir değer kullanılır.</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Entites_List" xml:space="preserve">
+    <value>Tüm varlık türlerini burada bulabilirsiniz: https://mccteam.github.io/r/entity/#L15</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Interaction" xml:space="preserve">
+    <value>Olası değerler: "Interact", "Attack" (varsayılan), "InteractAt" (Etkileşim ve Saldırı).</value>
+  </data>
+  <data name="ChatBot.AutoAttack.List_Mode" xml:space="preserve">
+    <value>Varlık listesinin bir "whitelist" (beyaz liste) mi yoksa "blacklist" (kara liste) mi olarak ele alınacağı.</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Mode" xml:space="preserve">
+    <value>"single" veya "multi". single her saldırıda tek bir yaratığı hedefler. multi her saldırıda menzildeki tüm yaratıkları hedefler</value>
+  </data>
+  <data name="ChatBot.AutoAttack.Priority" xml:space="preserve">
+    <value>"health" veya "distance". Yalnızca single modu kullanılırken gereklidir</value>
+  </data>
+  <data name="ChatBot.AutoCraft" xml:space="preserve">
+    <value>Envanterinizdeki eşyaları otomatik olarak üretin
+Nasıl kullanılacağı için bakınız: https://mccteam.github.io/g/bots/#auto-craft
+Bu botu kullanmak için Envanter İşlemeyi (Inventory Handling) etkinleştirmeniz gerekir
+Bir çalışma tezgahı kullanmanız gerekiyorsa Arazi ve Hareketleri (Terrain and Movements) de etkinleştirmelisiniz</value>
+  </data>
+  <data name="ChatBot.AutoCraft.CraftingTable" xml:space="preserve">
+    <value>Kullanmayı düşünüyorsanız çalışma tezgahının konumu. Arazi ve hareketler etkinleştirilmiş olmalıdır.</value>
+  </data>
+  <data name="ChatBot.AutoCraft.OnFailure" xml:space="preserve">
+    <value>Üretim başarısız olduğunda ne yapılacağı, "abort" veya "wait".</value>
+  </data>
+  <data name="ChatBot.AutoCraft.Recipes" xml:space="preserve">
+    <value>Recipes.Name: İsim istediğiniz herhangi bir şey olabilir ve tarifi temsil etmek için kullanılır.
+Recipes.Type: çalışma tezgahı türü: "player" veya "table"
+Recipes.Result: elde edilen eşya
+Recipes.Slots: Soldan sağa, yukarıdan aşağıya doğru sayılan tüm yuvalar. Boş yuvalar için lütfen "Null" yazın.
+Eşyaların adlandırılması için lütfen bakınız: https://mccteam.github.io/r/item/#L12</value>
+  </data>
+  <data name="ChatBot.AutoDig" xml:space="preserve">
+    <value>Blokları otomatik kazma.
+Bu botu kullanmak için Arazi İşlemeyi (Terrain Handling) etkinleştirmeniz gerekir
+AutoDig'in başlatılmasını ve durdurulmasını kontrol etmek için "/digbot start" ve "/digbot stop" komutlarını kullanabilirsiniz.
+MCC henüz blokların çarpışma hacminin doğru hesaplanmasını desteklemediğinden, ileriye bakış konumu elde edilirken tüm bloklar tam küp olarak kabul edilir.
+Blokların adlandırılması için lütfen bakınız: https://mccteam.github.io/r/block/#L15</value>
+  </data>
+  <data name="ChatBot.AutoDig.Auto_Start_Delay" xml:space="preserve">
+    <value>Oyuna girdikten sonra otomatik kazmaya başlamak için kaç saniye bekleneceği, otomatik başlatmayı devre dışı bırakmak için -1 olarak ayarlayın.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Auto_Tool_Switch" xml:space="preserve">
+    <value>Otomatik olarak uygun alete geç.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Apply_Efficiency_Enchantments" xml:space="preserve">
+    <value>AutoDig kazma süresini hesaplarken Verimlilik (Efficiency) büyüsü hızını uygula. Katı anti-hile uyumluluğu için bunu devre dışı bırakın.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Apply_Haste_Effects" xml:space="preserve">
+    <value>AutoDig kazma süresini hesaplarken Acele (Haste) ve İletken Gücü (Conduit Power) hız etkilerini uygula. Katı anti-hile uyumluluğu için bunu devre dışı bırakın.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Dig_Timeout" xml:space="preserve">
+    <value>Bir bloğu "Dig_Timeout" saniyeden daha uzun süre kazmak zaman aşımı olarak kabul edilir.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Drop_Low_Durability_Tools" xml:space="preserve">
+    <value>Dayanıklılığı çok düştüğünde mevcut aletin atılıp atılmayacağı.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Durability_Limit" xml:space="preserve">
+    <value>Bundan daha az dayanıklılığa sahip aletleri kullanmaz. Bu özelliği devre dışı bırakmak için sıfıra ayarlayın.</value>
+  </data>
+  <data name="ChatBot.AutoDig.List_Type" xml:space="preserve">
+    <value>Blok listesinin bir "whitelist" (beyaz liste) mi yoksa "blacklist" (kara liste) mi olarak ele alınacağı.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Locations" xml:space="preserve">
+    <value>"fixedpos" veya "both" modu kullanılırken blokların konumu.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Location_Order" xml:space="preserve">
+    <value>"distance" veya "index". "fixedpos" modu kullanılırken bloklar, oyuncuya olan uzaklığa göre veya listedeki sıraya göre belirlenir.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Log_Block_Dig" xml:space="preserve">
+    <value>Blok kazarken günlük çıktısı verilip verilmeyeceği.</value>
+  </data>
+  <data name="ChatBot.AutoDig.Mode" xml:space="preserve">
+    <value>"lookat", "fixedpos" veya "both". Bakılan bloğu, sabit bir konumdaki bloğu veya her iki koşulun da sağlanması gereken bloğu kazma.</value>
+  </data>
+  <data name="ChatBot.AutoDrop" xml:space="preserve">
+    <value>Envanterdeki eşyaları otomatik olarak at
+Bu botu kullanmak için Envanter İşlemeyi (Inventory Handling) etkinleştirmeniz gerekir
+Bu botla kullanabileceğiniz eşya türlerinin güncel listesi için bu dosyaya bakın: https://mccteam.github.io/r/item/#L12</value>
+  </data>
+  <data name="ChatBot.AutoDrop.Mode" xml:space="preserve">
+    <value>"include", "exclude" veya "everything". Include: listedeki eşyaları atar. Exclude: listede OLMAYAN eşyaları atar</value>
+  </data>
+  <data name="ChatBot.AutoEat" xml:space="preserve">
+    <value>Açlık değeriniz düşük olduğunda otomatik olarak yemek yiyin
+Bu botu kullanmak için Envanter İşlemeyi (Inventory Handling) etkinleştirmeniz gerekir</value>
+  </data>
+  <data name="ChatBot.AutoRelog" xml:space="preserve">
+    <value>Sunucu tarafından bağlantı kesildiğinde, örneğin sunucu yeniden başlatıldığında, otomatik olarak yeniden bağlanın
+/!\ Ignore_Kick_Message=true seçeneğini kendi riskinizle kullanın! Elle atıldığınızda otomatik yeniden bağlanmanız sunucu yetkililerinin hoşuna gitmeyebilir</value>
+  </data>
+  <data name="ChatBot.AutoRelog.Delay" xml:space="preserve">
+    <value>Sunucuya katılmadan önceki gecikme süresi. (saniye cinsinden)</value>
+  </data>
+  <data name="ChatBot.AutoRelog.Ignore_Kick_Message" xml:space="preserve">
+    <value>true olarak ayarlandığında, autorelog atılma mesajlarına bakılmaksızın yeniden bağlanır.</value>
+  </data>
+  <data name="ChatBot.AutoRelog.Kick_Messages" xml:space="preserve">
+    <value>Atılma mesajı dizelerden herhangi biriyle eşleşirse, autorelog tetiklenir.</value>
+  </data>
+  <data name="ChatBot.AutoRelog.Retries" xml:space="preserve">
+    <value>Sunucuya yeniden bağlanma başarısız olduğunda yeniden deneme sayısı. sınırsız yeniden deneme için -1 kullanın.</value>
+  </data>
+  <data name="ChatBot.AutoRespond" xml:space="preserve">
+    <value>Sohbette belirtilen bir kalıp algılandığında otomatik olarak komutlar çalıştırın veya mesajlar gönderin
+Sunucu yöneticileri sohbet mesajlarını taklit edebilir (/nick, /tellraw), bu yüzden AutoRespond kuralları oluştururken bunu göz önünde bulundurun
+/!\ Bu bot kurallarınıza bağlı olarak spam yapabilir, ancak genel messagecooldown ayarı istenmeyen spam'i önlemenize yardımcı olabilir</value>
+  </data>
+  <data name="ChatBot.AutoRespond.Match_Colors" xml:space="preserve">
+    <value>Metinden renkleri kaldırma (Not: Eşleşmelerinizin çalışması için renk kodlarını (§ karakterini kullananları) içermesi gerekir)</value>
+  </data>
+  <data name="ChatBot.ChatLog" xml:space="preserve">
+    <value>Sohbet mesajlarını diskteki bir dosyaya kaydeder.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge" xml:space="preserve">
+    <value>Bu bot, bir Discord kanalı aracılığıyla mesaj ve komut göndermenize ve almanıza olanak tanır.
+Kurulum için belgeleri kullanabilir veya buradan okuyabilirsiniz (Belgelerde görseller vardır).
+Belgeler: https://mccteam.github.io/g/bots/#discord-bridge
+Kurulum:
+Öncelikle Discord Developers Portal üzerinde bir Bot oluşturmanız gerekir, işte bir video eğitimi: https://www.youtube.com/watch?v=2FgMnZViNPA .
+/!\ ÖNEMLİ /!\: Bir bot oluştururken, botun çalışması için "Message Content Intent", "Server Members Intent" ve "Presence Intent" seçeneklerini ETKİNLEŞTİRMELİSİNİZ! Ayrıca adımları dikkatlice takip edin, hiçbir adımı atlamayın!
+Bir bot oluştururken, üretilen token'ı kopyalayın ve buraya "Token" alanına yapıştırın (token'lar önemlidir, onları güvende tutun).
+"Application ID" değerini kopyalayın ve şu adrese gidin: https://discordapi.com/permissions.html .
+Kopyaladığınız kimliği yapıştırın ve izinlerdeki "Administrator" alanını işaretleyin, ardından alttaki bağlantıya tıklayın.
+Bu, sunucularınızın olduğu bir davet menüsü açacaktır; botu davet etmek istediğiniz sunucuyu seçin ve onu davet edin.
+Botu davet ettikten sonra, Discord istemcinize gidin ve Ayarlar -&gt; Gelişmiş bölümüne gidip "Developer Mode" (Geliştirici Modu) seçeneğini etkinleştirin.
+Ayarlardan çıkın ve sunucu listesinde botu davet ettiğiniz bir sunucuya sağ tıklayın, ardından "Copy ID" seçeneğine tıklayın ve kimliği buraya "GuildId" alanına yapıştırın.
+Ardından botla etkileşim kurmak istediğiniz bir kanala sağ tıklayın ve tekrar sağ tıklayıp -&gt; "Copy ID" seçeneğini seçin, kopyalanan kimliği buraya "ChannelId" alanına yapıştırın.
+Ve son olarak, kanala bir mesaj gönderin, takma adınıza sağ tıklayın ve tekrar sağ tıklayıp -&gt; "Copy ID" seçeneğini seçin, ardından kimliği buraya "OwnersIds" alanına yapıştırın.
+Nasıl kullanılır:
+Bir MCC komutu çalıştırmak için önüne bir nokta "." ekleyin, örnek: ".move 143 64 735" .
+Bir mesaj göndermek için sadece yazın ve enter tuşuna basın.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.ChannelId" xml:space="preserve">
+    <value>Botu kullanarak MCC ile etkileşim kurmak istediğiniz kanalın kimliği.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.Formats" xml:space="preserve">
+    <value>Mesaj biçimleri
+{ ve } ile sarılmış kelimeler kod çalıştırılırken değiştirilecektir, onları değiştirmeyin!
+Örneğin, {message} gerçek bir mesajla değiştirilecek, {username} bir kullanıcı adıyla değiştirilecek, {timestamp} ise geçerli saatle değiştirilecektir.
+Discord mesaj biçimlendirmesi için şuna bakın: https://mccteam.github.io/r/dc-fmt.html</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.GuildId" xml:space="preserve">
+    <value>Botu davet ettiğiniz sunucunun/topluluğun kimliği.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.MessageSendTimeout" xml:space="preserve">
+    <value>Bir mesaj Discord'a gönderilemezse görevi iptal etmeden önce ne kadar bekleneceği (saniye cinsinden) (en az 1 saniye).</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.OwnersIds" xml:space="preserve">
+    <value>Botu kullanarak MCC ile etkileşim kurabilmesini istediğiniz kişilerin kimliklerinin listesi.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.Token" xml:space="preserve">
+    <value>Discord Bot token'ınız.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.AllowOtherBotMessages" xml:space="preserve">
+    <value>Etkinleştirildiğinde, kanaldaki diğer Discord botlarından gelen mesajlar Minecraft sohbetine aktarılır. Köprü, döngüleri önlemek için her zaman kendi mesajlarını yok sayar.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.RelayAllMessages" xml:space="preserve">
+    <value>Etkinleştirildiğinde, Minecraft sunucusundan alınan tüm metinler (sistem mesajları, katılma/ayrılma bildirimleri vb. dahil) yalnızca oyuncu sohbeti ve özel mesajlar değil, Discord'a aktarılır.</value>
+  </data>
+  <data name="ChatBot.DiscordBridge.MessageAggregationInterval" xml:space="preserve">
+    <value>Mesajları Discord'a göndermeden önce toplamak için saniye cinsinden aralık. 0 olarak ayarlandığında, mesajlar hemen tek tek gönderilir. 1.0 gibi bir değere ayarlandığında, o aralık içinde alınan mesajlar tek bir Discord mesajında birleştirilir. Discord API hız sınırlarını azaltmak için kullanışlıdır.</value>
+  </data>
+  <data name="ChatBot.Farmer" xml:space="preserve">
+    <value>Sizin için ekinleri otomatik olarak yetiştirir (eker, kırar ve kemik tozu uygular).
+Kullanılabilir ekin türleri: Beetroot, Carrot, Melon, Netherwart, Pumpkin, Potato, Wheat.
+Kullanım: "/farmer start" komutu ve "/farmer stop" komutu.
+NOT: Bu yeni eklenmiş bir bottur, mükemmel değildir ve yalnızca 1.19.2'de test edilmiştir; bazen havuçlara/patateslere kemik tozu uygulayamamak gibi küçük sorunlar vardır.
+veya bot tarlaya zıplayıp onu kırar (bu nadiren olur ama yine de olur). Bunu iyileştirmeyi umuyoruz.
+Botun zıplamasını önlemek için tarım alanını duvarla çevrili ve düz tutmanız önerilir.
+Ayrıca, tarlanız bir blok yüksekliğindeyse, bot bazen yeniden bağlandığında düşebileceği için, botun içinden düşmemesi için onu 2 veya daha fazla blok yüksekliğinde yapın.
+Bot ayrıca eşyalar yana savrulursa hepsini toplamaz; bu seçeneği gelecekte, bırakma ve kemik tozu yeniden dolum sandıkları ile birlikte uygulamayı planlıyoruz.</value>
+  </data>
+  <data name="ChatBot.Farmer.Delay_Between_Tasks" xml:space="preserve">
+    <value>Görevler arasındaki gecikme, saniye cinsinden (En az 1 saniye)</value>
+  </data>
+  <data name="ChatBot.FollowPlayer" xml:space="preserve">
+    <value>Botun sizi takip etmesini sağlar
+NOT: Bu deneysel bir özelliktir, bot zaman zaman yavaş olabilir; sizi takip edebilmesi için normal bir hızla yürümeniz ve bazen durmanız gerekir
+Bu, elinizde yemek tutarken hayvanların sizi takip etmesine benzer.
+Bunun nedeni yavaş bir yol bulma algoritmasıdır, daha iyisini elde etmek için çalışıyoruz
+Güncelleme sınırını ayarlayıp sizin için en iyi olanı bulabilirsiniz. (NOT: Çok düşük bir değer koymayın, çünkü tam tersini elde edebilirsiniz,
+bu, arazi işleme iş parçacığını tıkayabilir) ve böylece botu daha da yavaşlatabilir.
+/!\ Bu botu kullanmadan önce sunucu kurallarının böyle bir seçeneğe izin verdiğinden emin olun</value>
+  </data>
+  <data name="ChatBot.FollowPlayer.Stop_At_Distance" xml:space="preserve">
+    <value>Oyuncu 3 blokluk menzildeyse takip etme (botun oyuncuyu sonsuz bir döngüde itmesini önler)</value>
+  </data>
+  <data name="ChatBot.FollowPlayer.Update_Limit" xml:space="preserve">
+    <value>Botun hesaplamaları yapma sıklığı (saniye cinsinden) (Botun çok yavaş olduğunu düşünüyorsanız bunu ayarlayabilirsiniz)</value>
+  </data>
+  <data name="ChatBot.HangmanGame" xml:space="preserve">
+    <value>Sohbet etkileşimlerini göstermek için küçük bir oyun. Oyuncular gizli kelimeleri her seferinde bir harf tahmin edebilir.
+Oyunu /tell &lt;bot username&gt; start ile başlatmak için ChatFormat'ın doğru çalışması ve kendinizi botowners'a eklemeniz gerekir
+/!\ Birçok oyuncu bu botla etkileşime girerse biraz spam yapabilir</value>
+  </data>
+  <data name="ChatBot.Mailer" xml:space="preserve">
+    <value>Bir posta eklentisi gibi, oyuncular ve sunucular arasında mesajları aktarın
+Bu bot, alıcılar çevrimdışıyken mesajları saklayabilir ve onlar sunucuya katıldığında gönderebilir
+/!\ Sunucu yöneticileri özel mesajları taklit edebilir (/tellraw, /nick), bu yüzden bu botu yalnızca sunucu yöneticilerine güveniyorsanız etkinleştirin</value>
+  </data>
+  <data name="ChatBot.Map" xml:space="preserve">
+    <value>Haritaları konsolda ve görsel olarak (bunlar daha sonra Discord Bridge Chat Bot kullanılarak Discord'a gönderilebilir) işlemenize (render) olanak tanır
+Bu, harita kullanan captcha'ları çözmek için kullanışlıdır
+Save_To_File etkinse haritalar Rendered_Maps klasörüne işlenir.
+NOT:
+Bazı sunucularda captcha çözmek için çok kısa süre varsa, onları konsolda hemen görmek için Auto_Render_On_Update seçeneğini etkinleştirin.
+/!\ Sunucu kurallarının sunucuda bot kullanımına izin verdiğinden emin olun, aksi takdirde cezalandırılma riskiyle karşı karşıya kalırsınız.</value>
+  </data>
+  <data name="ChatBot.Map.Auto_Render_On_Update" xml:space="preserve">
+    <value>Harita sunucudan alındığında veya sunucu tarafından güncellendiğinde otomatik olarak işle</value>
+  </data>
+  <data name="ChatBot.Map.Delete_All_On_Unload" xml:space="preserve">
+    <value>Kaldırma/yeniden yükleme sırasında veya MCC'yi yeniden başlattığınızda işlenmiş tüm haritaları sil.</value>
+  </data>
+  <data name="ChatBot.Map.Notify_On_First_Update" xml:space="preserve">
+    <value>Sunucudan ilk kez bir harita aldığınızda bir bildirim alın</value>
+  </data>
+  <data name="ChatBot.Map.Rasize_Rendered_Image" xml:space="preserve">
+    <value>İşlenmiş bir görseli yeniden boyutlandır, bu işlenen görseller küçük olduğunda ve Discord'a gönderilirken kullanışlıdır.</value>
+  </data>
+  <data name="ChatBot.Map.Render_In_Console" xml:space="preserve">
+    <value>Haritanın konsolda işlenip işlenmeyeceği.</value>
+  </data>
+  <data name="ChatBot.Map.Resize_To" xml:space="preserve">
+    <value>İşlenmiş bir görselin yeniden boyutlandırılacağı boyut, piksel cinsinden (örn. 512).</value>
+  </data>
+  <data name="ChatBot.Map.Save_To_File" xml:space="preserve">
+    <value>İşlenmiş haritanın bir dosya olarak saklanıp saklanmayacağı (Discord Bridge kullanarak Discord'da bir harita almak istiyorsanız bu ayara ihtiyacınız var).</value>
+  </data>
+  <data name="ChatBot.Map.Send_Rendered_To_Bridges" xml:space="preserve">
+    <value>İşlenmiş bir haritayı (bir dosyaya kaydedilmiş) Discord veya Telegram Bridge sohbet botu aracılığıyla bir Discord veya Telegram kanalına gönderin (Discord/Telegram Bridge sohbet botu etkinleştirilmiş ve yapılandırılmış olmalıdır!)
+Bunun çalışması için Save_To_File seçeneğini etkinleştirmeniz gerekir.
+Ayrıca yeniden boyutlandırmayı açmanızı öneririz.</value>
+  </data>
+  <data name="ChatBot.PlayerListLogger" xml:space="preserve">
+    <value>Oyuncu listesini periyodik olarak bir metin dosyasına kaydet.</value>
+  </data>
+  <data name="ChatBot.PlayerListLogger.Delay" xml:space="preserve">
+    <value>(Saniye cinsinden)</value>
+  </data>
+  <data name="ChatBot.RemoteControl" xml:space="preserve">
+    <value>MCC konsol komutlarını sunucu özel mesajları (/tell) aracılığıyla botunuza gönderin
+Botu kullanmak için ChatFormat'ın doğru çalışması ve kendinizi botowners'a eklemeniz gerekir
+/!\ Sunucu yöneticileri özel mesajları taklit edebilir (/tellraw, /nick), bu yüzden RemoteControl'ü yalnızca sunucu yöneticilerine güveniyorsanız etkinleştirin</value>
+  </data>
+  <data name="ChatBot.ReplayCapture" xml:space="preserve">
+    <value>Oyunun otomatik kaydını etkinleştirin ve daha sonra Replay Mod (https://www.replaymod.com/) kullanarak tekrar izleyin
+Kayıt devam ederken bir anlık görüntü tekrar dosyası oluşturmak için /replay save komutunu kullanın.
+Lütfen teknik kısıtlamalar nedeniyle istemci oyuncusunun (sizin) tekrar dosyasında gösterilmeyeceğini unutmayın
+Her MCC örneği kendi geçici tekrar önbelleğini kullanır, böylece birden fazla istemci aynı klasörden çakışmadan kayıt yapabilir.
+/!\ /replay stop komutunu KULLANMALISINIZ veya programdan /quit ile düzgünce çıkmalısınız, AKSİ TAKDİRDE TEKRAR DOSYASI BOZULABİLİR!</value>
+  </data>
+  <data name="ChatBot.ReplayCapture.Backup_Interval" xml:space="preserve">
+    <value>Tekrar dosyasının ne kadar sürede bir otomatik kaydedileceği, saniye cinsinden. Devre dışı bırakmak için -1 kullanın.</value>
+  </data>
+  <data name="ChatBot.ScriptScheduler" xml:space="preserve">
+    <value>Sunucuya katılma, tarih/saat veya zaman aralığı gibi çeşitli olaylarda çalıştırılacak komutları ve betikleri zamanlayın
+Daha fazla bilgi için bakınız: https://mccteam.github.io/g/bots/#script-scheduler</value>
+  </data>
+  <data name="ChatBot.TelegramBridge" xml:space="preserve">
+    <value>Bu bot, bir Telegram Bot özel mesajı (DM) aracılığıyla mesaj ve komut göndermenize ve almanıza veya bir Telegram kanalında mesaj almanıza olanak tanır.
+/!\ NOT: Bir grup kanalından mesaj ve komut gönderemezsiniz, bunları yalnızca botun DM'inde gönderebilirsiniz, ancak istemciden gelen mesajları bir grup kanalında alabilirsiniz.
+-----------------------------------------------------------
+Kurulum:
+Öncelikle bir Telegram botu oluşturup bir API anahtarı almanız gerekir; bunu yapmak için Telegram'a gidin ve @botfather'ı bulun
+"Start" düğmesine tıklayın ve botun yanıtını okuyun, ardından "/newbot" yazın, Botfather bot oluşturma sürecinde size rehberlik edecektir.
+Botu oluşturduktan sonra, aldığınız API anahtarını kopyalayın ve "ChatBot.TelegramBridge" bölümünün (bu bölüm) "Token" alanına yerleştirin.
+/!\ Bu token'ı başka kimseyle paylaşmayın, çünkü bu onlara botunuz üzerinde kontrol sağlar. Güvenli bir şekilde saklayın.
+Ardından istemciyi başlatın ve Telegram'a gidin, yeni oluşturduğunuz botu kullanıcı adıyla arayarak bulun ve onunla bir DM açın.
+"Start" düğmesine tıklayın ve sohbet kimliğini almak için şu komutu yazıp gönderin ".chatid".
+Sohbet kimliği numarasını (örn. 2627844670) kopyalayın ve "ChannelId" alanına yapıştırın ve onu "Authorized_Chat_Ids" alanına (bu bölümde) ekleyin ("Authorized_Chat_Ids" alanındaki bir kimlik bir sayı/long değeridir, bir dize değildir!), ardından dosyayı kaydedin.
+Artık botu DM'i aracılığıyla kullanabilirsiniz.
+/!\ Botla olan DM sohbetinizin kimliğini "Authorized_Chat_Ids" alanına eklemezseniz, botunuzu arama yoluyla bulan herkes komut çalıştırabilir ve mesaj gönderebilir!
+/!\ "Authorized_Chat_Ids" alanına yapıştırılan bir kimlik bir dize değil, bir sayı/long olmalıdır!
+-----------------------------------------------------------
+NOT: Bunun yerine bir grup kanalına mesaj almak istiyorsanız, kanalı geçici olarak herkese açık yapın, botu ona davet edin ve yönetici yapın, ardından isterseniz kanalı özel olarak ayarlayın.
+Ardından "ChannelId" alanını kanalınızın @ değerine ayarlayın (ayarlarda @ işaretini eklemelisiniz, örn. "@mysupersecretchannel"), bu, kanalın davet bağlantısında görebileceğiniz kullanıcı adıdır.
+/!\ Yalnızca @ önekli kullanıcı adını ekleyin, bağlantının geri kalanını eklemeyin. Örneğin "https://t.me/mysupersecretchannel" adresiniz varsa, "ChannelId" değeri "@mysupersecretchannel" olacaktır.
+/!\ Bir grup kanalından istemciye mesaj gönderemeyeceğinizi unutmayın!
+-----------------------------------------------------------
+Botun nasıl kullanılacağı:
+Bir MCC komutu çalıştırmak için önüne bir nokta "." ekleyin, örnek: ".move 143 64 735" .
+Bir mesaj göndermek için sadece yazın ve enter tuşuna basın.</value>
+  </data>
+  <data name="ChatBot.TelegramBridge.Authorized_Chat_Ids" xml:space="preserve">
+    <value>Mesaj göndermesine ve komut çalıştırmasına izin verilen Sohbet Kimliklerinin listesi. Botla olan DM sohbetinizin kimliğini almak için Telegram'da ".chatid" bot komutunu kullanın.</value>
+  </data>
+  <data name="ChatBot.TelegramBridge.ChannelId" xml:space="preserve">
+    <value>Botu kullanarak MCC ile etkileşim kurmak istediğiniz kanalın kimliği.</value>
+  </data>
+  <data name="ChatBot.TelegramBridge.Formats" xml:space="preserve">
+    <value>Mesaj biçimleri
+{ ve } ile sarılmış kelimeler kod çalıştırılırken değiştirilecektir, onları değiştirmeyin!
+Örneğin, {message} gerçek bir mesajla değiştirilecek, {username} bir kullanıcı adıyla değiştirilecek, {timestamp} ise geçerli saatle değiştirilecektir.
+Telegram mesaj biçimlendirmesi için şuna bakın: https://mccteam.github.io/r/tg-fmt.html</value>
+  </data>
+  <data name="ChatBot.TelegramBridge.MessageSendTimeout" xml:space="preserve">
+    <value>Bir mesaj Telegram'a gönderilemezse görevi iptal etmeden önce ne kadar bekleneceği (saniye cinsinden) (en az 1 saniye).</value>
+  </data>
+  <data name="ChatBot.TelegramBridge.Token" xml:space="preserve">
+    <value>Telegram Bot token'ınız.</value>
+  </data>
+  <data name="ChatFormat" xml:space="preserve">
+    <value>MCC sohbet mesajlarını algılamak için elinden geleni yapar, ancak bazı sunucularda alışılmadık sohbet biçimleri vardır
+Bu durumda, aşağıdaki sohbet biçimini yapılandırmanız gerekir, bakınız: https://mccteam.github.io/g/conf/#chat-format-section</value>
+  </data>
+  <data name="ChatFormat.Builtins" xml:space="preserve">
+    <value>Yaygın mesaj biçimleri için MCC desteği. Özel biçimlerle çakışmaları önlemek için "false" olarak ayarlayın.</value>
+  </data>
+  <data name="ChatFormat.UserDefined" xml:space="preserve">
+    <value>Algılama için aşağıdaki özel düzenli ifadelerin (regex) kullanılıp kullanılmayacağı.</value>
+  </data>
+  <data name="Console" xml:space="preserve">
+    <value>Konsolla ilgili ayarlar.</value>
+  </data>
+  <data name="Console.CommandSuggestion" xml:space="preserve">
+    <value>Komut tamamlama önerileri için ayarlar.
+Özel renkler yalnızca "vt100_24bit" renk modu kullanılırken kullanılabilir.</value>
+  </data>
+  <data name="Console.CommandSuggestion.Enable" xml:space="preserve">
+    <value>Komut önerilerinin konsolda gösterilip gösterilmeyeceği.</value>
+  </data>
+  <data name="Console.CommandSuggestion.Use_Basic_Arrow" xml:space="preserve">
+    <value>Komut önerilerindeki oklar terminalinizde düzgün görüntülenmiyorsa bu seçeneği etkinleştirin.</value>
+  </data>
+  <data name="Console.General.ConsoleMode" xml:space="preserve">
+    <value>Konsol modu: standart terminal için "classic", sözde grafiksel tam ekran arayüz için "tui".</value>
+  </data>
+  <data name="Console.General.ConsoleColorMode" xml:space="preserve">
+    <value>"disable", "legacy_4bit", "vt100_4bit", "vt100_8bit" veya "vt100_24bit" kullanın. Terminalde "←[0m" gibi bozuk bir kod görünürse "legacy_4bit" moduna geçmeyi deneyebilir ya da bunu devre dışı bırakabilirsiniz.</value>
+  </data>
+  <data name="Console.General.Display_Icon_Banner" xml:space="preserve">
+    <value>MCC başlangıç simgesi afişinin gösterilip gösterilmeyeceği.</value>
+  </data>
+  <data name="Console.General.Display_Input" xml:space="preserve">
+    <value>Geçerli girdiyi ve imleç konumunu yazdırmak için "Ctrl+P" kullanabilirsiniz.</value>
+  </data>
+  <data name="Console.General.Display_Chat" xml:space="preserve">
+    <value>Alınan sohbet mesajlarının konsolda gösterilip gösterilmeyeceği. Bu, sohbet botlarını veya sohbet günlük dosyalarını etkilemez.</value>
+  </data>
+  <data name="Console.General.History_Input_Records" xml:space="preserve">
+    <value>Saklanacak maksimum girdi geçmişi kaydı sayısı.</value>
+  </data>
+  <data name="Console.General.TUI_Log_Scrollback" xml:space="preserve">
+    <value>TUI modu kaydırma geçmişinde tutulacak maksimum günlük satırı. Otomatik için 0 olarak ayarlayın.</value>
+  </data>
+  <data name="Head" xml:space="preserve">
+    <value>Başlangıç Yapılandırma Dosyası
+MCC tarafından üzerine yazılacağı için lütfen bu dosyaya gereksiz veri kaydetmeyin.
+
+Minecraft Console Client'ta yeni misiniz? Şu belgeye göz atın: https://mccteam.github.io/g/conf.html
+Daha yeni bir sürüme yükseltmek mi istiyorsunuz? Bakın: https://github.com/MCCTeam/Minecraft-Console-Client/#download</value>
+  </data>
+  <data name="Logging" xml:space="preserve">
+    <value>Bu ayar yalnızca konsoldaki mesajları etkiler.</value>
+  </data>
+  <data name="Logging.ChatFilter" xml:space="preserve">
+    <value>Sohbet mesajını filtrelemek için regex.</value>
+  </data>
+  <data name="Logging.ChatMessages" xml:space="preserve">
+    <value>Sunucu sohbet mesajlarını göster.</value>
+  </data>
+  <data name="Logging.DebugFilter" xml:space="preserve">
+    <value>Hata ayıklama mesajını filtrelemek için regex.</value>
+  </data>
+  <data name="Logging.DebugMessages" xml:space="preserve">
+    <value>Hata raporu göndermeden önce lütfen bunu etkinleştirin. Teşekkürler!</value>
+  </data>
+  <data name="Logging.PacketDebugMessages" xml:space="preserve">
+    <value>Düşük seviyeli paket hata ayıklama günlüklerini göster.</value>
+  </data>
+  <data name="Logging.PacketDebugExclusions" xml:space="preserve">
+    <value>Paket hata ayıklama günlüklerinden hariç tutulacak paket türleri, örn. ["KeepAlive", "Ping"].</value>
+  </data>
+  <data name="Logging.ErrorMessages" xml:space="preserve">
+    <value>Hata mesajlarını göster.</value>
+  </data>
+  <data name="Logging.FilterMode" xml:space="preserve">
+    <value>"disable" ya da "blacklist" VEYA "whitelist". Blacklist, regex ile eşleşen mesajları gizler. Whitelist, regex ile eşleşen mesajları gösterir.</value>
+  </data>
+  <data name="Logging.InfoMessages" xml:space="preserve">
+    <value>Bilgilendirici mesajlar. (yani MCC'den gelen mesajların çoğu)</value>
+  </data>
+  <data name="Logging.LogFile" xml:space="preserve">
+    <value>Günlük dosyası adı.</value>
+  </data>
+  <data name="Logging.LogToFile" xml:space="preserve">
+    <value>Günlük mesajlarını dosyaya yaz.</value>
+  </data>
+  <data name="Logging.PrependTimestamp" xml:space="preserve">
+    <value>Günlük dosyasındaki mesajların başına zaman damgası ekle.</value>
+  </data>
+  <data name="Logging.SaveColorCodes" xml:space="preserve">
+    <value>Kaydedilen metinde renk kodlarını koru.("§b" gibi görünür)</value>
+  </data>
+  <data name="Logging.WarningMessages" xml:space="preserve">
+    <value>Uyarı mesajlarını göster.</value>
+  </data>
+  <data name="Main.Advanced" xml:space="preserve">
+    <value>Herhangi bir şeyi değiştirmeden önce her ayarın ne yaptığını anladığınızdan emin olun!</value>
+  </data>
+  <data name="Main.Advanced.account_list" xml:space="preserve">
+    <value>AccountList: Kimlik bilgilerini doğrudan kullanmadan hızlı hesap değiştirmeye olanak tanır
+Kullanım örnekleri: "/tell &lt;mybot&gt; reco Player2", "/connect &lt;serverip&gt; Player1"</value>
+  </data>
+  <data name="Main.Advanced.auto_respawn" xml:space="preserve">
+    <value>İstemci oyuncusu öldüğünde otomatik yeniden doğmayı aç/kapat (doğma noktanızın güvenli olduğundan emin olun).</value>
+  </data>
+  <data name="Main.Advanced.bot_owners" xml:space="preserve">
+    <value>Botun sahibini ayarlayın. /!\ Sunucu yöneticileri sahiplerin kimliğine bürünebilir!</value>
+  </data>
+  <data name="Main.Advanced.brand_info" xml:space="preserve">
+    <value>"mcc", "vanilla" veya "none" kullanın. MCC kendisini sunucuya bu şekilde tanıtır.</value>
+  </data>
+  <data name="Main.Advanced.chatbot_log_file" xml:space="preserve">
+    <value>Günlük dosyası olmaması için boş bırakın.</value>
+  </data>
+  <data name="Main.Advanced.enable_emoji" xml:space="preserve">
+    <value>Kapatılırsa emoji daha basit bir karakterle değiştirilir (/chunk status için).</value>
+  </data>
+  <data name="Main.Advanced.entity_handling" xml:space="preserve">
+    <value>Varlık işlemeyi aç/kapat.</value>
+  </data>
+  <data name="Main.Advanced.exit_on_failure" xml:space="preserve">
+    <value>MCC'yi etkileşimsiz betiklerde kullanmak için, bir hata oluştuğunda doğrudan çıkılıp çıkılmayacağı.</value>
+  </data>
+  <data name="Main.Advanced.internal_cmd_char" xml:space="preserve">
+    <value>"none", "slash"(/) veya "backslash"(\) kullanın.</value>
+  </data>
+  <data name="Main.Advanced.inventory_handling" xml:space="preserve">
+    <value>Envanter işlemeyi aç/kapat.</value>
+  </data>
+  <data name="Main.Advanced.language" xml:space="preserve">
+    <value>Oyun içi yerel ayar kodunu girin, bakın: https://mccteam.github.io/r/l-code.html</value>
+  </data>
+  <data name="Main.Advanced.LoadMccTrans" xml:space="preserve">
+    <value>Mevcut olduğunda MCC'ye uygulanan çevirileri yükle, yalnızca İngilizce kullanmak için kapatın.</value>
+  </data>
+  <data name="Main.Advanced.load_resourcepack_translations" xml:space="preserve">
+    <value>Sunucu kaynak paketlerinden çevirileri yükle ve daha hızlı yeniden kullanım için çıkarılan dil girdilerini yerel olarak önbelleğe al.</value>
+  </data>
+  <data name="Main.Advanced.load_forge_mod_translations" xml:space="preserve">
+    <value>Mod kimlikleri sunucu tarafından bildirildiğinde yerel Forge mod jar dosyalarından çevirileri yükle. Varsayılan olarak devre dışıdır.</value>
+  </data>
+  <data name="Main.Advanced.auto_discover_forge_mod_translation_sources" xml:space="preserve">
+    <value>Mevcut olduğunda çeviri jar dosyaları için standart Minecraft, Prism Launcher ve CurseForge örnek mod klasörlerini de tara.</value>
+  </data>
+  <data name="Main.Advanced.forge_mod_translation_path" xml:space="preserve">
+    <value>Bir mods klasörüne isteğe bağlı yol. Ayarlandığında MCC, Forge mod çevirilerini otomatik keşif yerine bu klasörden yükler.</value>
+  </data>
+  <data name="Main.Advanced.mc_forge" xml:space="preserve">
+    <value>"auto", "no" veya "force" kullanın. Zorla etkinleştirme yalnızca MC 1.13+ için çalışır.</value>
+  </data>
+  <data name="Main.Advanced.mc_version" xml:space="preserve">
+    <value>"auto" veya "1.X.X" değerlerini kullanın. Sunucu bilgisi almayı atlamaya olanak tanır.</value>
+  </data>
+  <data name="Main.Advanced.message_cooldown" xml:space="preserve">
+    <value>Sunucuya her mesaj gönderme arasındaki minimum aralığı (saniye cinsinden) kontrol eder.</value>
+  </data>
+  <data name="Main.Advanced.max_chat_message_length" xml:space="preserve">
+    <value>Maksimum sohbet mesajı uzunluğunu geçersiz kıl. Varsayılanı kullanmak için 0 olarak ayarlayın (1.10 ve altı için 100, 1.11+ için 256). UYARI: Bunu yanlış ayarlamak sunucudan atılmanıza neden olabilir.</value>
+  </data>
+  <data name="Main.Advanced.minecraft_realms" xml:space="preserve">
+    <value>Minecraft Realms dünyalarına katılma desteğini etkinleştir.</value>
+  </data>
+  <data name="Main.Advanced.MinTerminalHeight" xml:space="preserve">
+    <value>Terminalin yüksekliğinden görüntü boyutu hesaplanırken kullanılacak minimum yükseklik.</value>
+  </data>
+  <data name="Main.Advanced.MinTerminalWidth" xml:space="preserve">
+    <value>Terminalin genişliğinden görüntü boyutu hesaplanırken kullanılan minimum genişlik.</value>
+  </data>
+  <data name="Main.Advanced.movement_speed" xml:space="preserve">
+    <value>2'den yüksek bir hareket hızı hile olarak değerlendirilebilir.</value>
+  </data>
+  <data name="Main.Advanced.move_head_while_walking" xml:space="preserve">
+    <value>Anti-hile tetiklemelerinden kaçınmak için yürürken kafa hareketini etkinleştir.</value>
+  </data>
+  <data name="Main.Advanced.player_head_icon" xml:space="preserve">
+    <value>Yalnızca Windows XP-8 veya eski konsollu Windows 10'da çalışır.</value>
+  </data>
+  <data name="Main.Advanced.private_msgs_cmd_name" xml:space="preserve">
+    <value>Botun uzaktan kontrolü için.</value>
+  </data>
+  <data name="Main.Advanced.profilekey_cache" xml:space="preserve">
+    <value>Profil anahtarının nasıl saklanacağı. "none", "memory" veya "disk" kullanın.</value>
+  </data>
+  <data name="Main.Advanced.resolve_srv_records" xml:space="preserve">
+    <value>"no", "fast" (5sn zaman aşımı) veya "yes" kullanın. Bazı sunuculara katılmak için gereklidir.</value>
+  </data>
+  <data name="Main.Advanced.script_cache" xml:space="preserve">
+    <value>Düşük donanımlı cihazlarda daha hızlı yükleme için derlenmiş betikleri önbelleğe al.</value>
+  </data>
+  <data name="Main.Advanced.server_list" xml:space="preserve">
+    <value>ServerList: Tam sunucu IP'si yerine kısa takma adlarla daha kolay ve hızlı sunucu değiştirmeye olanak tanır
+Takma adlar nokta veya boşluk içeremez ve "localhost" adı takma ad olarak kullanılamaz.
+Kullanım örnekleri: "/tell &lt;mybot&gt; connect Server1", "/connect Server2"</value>
+  </data>
+  <data name="Main.Advanced.session_cache" xml:space="preserve">
+    <value>Oturum belirteçlerinin nasıl saklanacağı. "none", "memory" veya "disk" kullanın.</value>
+  </data>
+  <data name="Main.Advanced.show_chat_links" xml:space="preserve">
+    <value>Sohbet mesajlarına gömülü bağlantıları çöz ve konsolda göster.</value>
+  </data>
+  <data name="Main.Advanced.show_inventory_layout" xml:space="preserve">
+    <value>Envanter komutunda envanter düzenini ASCII resmi olarak göster.</value>
+  </data>
+  <data name="Main.Advanced.show_effect_messages" xml:space="preserve">
+    <value>Aktif efektleriniz kazanıldığında veya sona erdiğinde sohbet bildirimlerini göster. Bu mesajları tamamen devre dışı bırakmak için false olarak ayarlayın.</value>
+  </data>
+  <data name="Main.Advanced.show_effect_names_in_tui" xml:space="preserve">
+    <value>TUI durum çubuğunda yalnızca kompakt efekt simgeleri yerine tam efekt adlarını ve seviyelerini göster.</value>
+  </data>
+  <data name="Main.Advanced.show_github_star_reminder" xml:space="preserve">
+    <value>Başlangıçta bir GitHub yıldız hatırlatıcısı göster. Gizlemek için false olarak ayarlayın.</value>
+  </data>
+  <data name="Main.Advanced.show_system_messages" xml:space="preserve">
+    <value>Sunucu operatörleri için sistem mesajları.</value>
+  </data>
+  <data name="Main.Advanced.show_xpbar_messages" xml:space="preserve">
+    <value>XP çubuğunun üzerinde görüntülenen mesajlar, XP çubuğu spam'i durumunda bunu false olarak ayarlayın.</value>
+  </data>
+  <data name="Main.Advanced.temporary_fix_badpacket" xml:space="preserve">
+    <value>Bazı sunuculardaki Badpacket sorunu için geçici düzeltme. Önce "TerrainAndMovements" etkinleştirilmelidir.</value>
+  </data>
+  <data name="Main.Advanced.terrain_and_movements" xml:space="preserve">
+    <value>Daha fazla ram, cpu, bant genişliği kullanır ancak etrafta hareket etmenize olanak tanır.</value>
+  </data>
+  <data name="Main.Advanced.timeout" xml:space="preserve">
+    <value>Sunucuyla TCP bağlantısı zaman aşımını özelleştirin. (saniye cinsinden)</value>
+  </data>
+  <data name="Main.Advanced.timestamps" xml:space="preserve">
+    <value>Sohbet mesajlarının başına zaman damgası ekle.</value>
+  </data>
+  <data name="Main.General.account" xml:space="preserve">
+    <value>Login=E-posta veya Ad. Çevrimdışı mod için parola olarak "-" kullanın. Başlangıçta kullanıcıya sormak için boş bırakın.</value>
+  </data>
+  <data name="Main.General.login" xml:space="preserve">
+    <value>Oyun sunucusunun adresi, "Host" alanı alan adı veya IP adresi ile doldurulabilir. ("Port" alanı silinebilir, otomatik olarak çözümlenir)</value>
+  </data>
+  <data name="Main.General.method" xml:space="preserve">
+    <value>Microsoft Hesabı oturum açma yöntemi: "mcc" (cihaz kodu, 2FA destekler) VEYA "browser" (manuel tarayıcı girişi).</value>
+  </data>
+  <data name="Main.General.server_info" xml:space="preserve">
+    <value>Hesap türü: "mojang" VEYA "microsoft" VEYA "yggdrasil". Ayrıca konsoldaki etkileşimli girişi de etkiler.</value>
+  </data>
+  <data name="MCSettings" xml:space="preserve">
+    <value>Aşağıdaki ayarlar sunucuya gönderilir ve yalnızca kaplamanız gibi sunucu tarafındaki şeyleri etkiler.</value>
+  </data>
+  <data name="MCSettings.ChatColors" xml:space="preserve">
+    <value>Sohbet renklerinin sunucu tarafında devre dışı bırakılmasına olanak tanır.</value>
+  </data>
+  <data name="MCSettings.ChatMode" xml:space="preserve">
+    <value>"enabled", "commands" veya "disabled" kullanın. Kendinizi susturmanıza olanak tanır...</value>
+  </data>
+  <data name="MCSettings.Difficulty" xml:space="preserve">
+    <value>MC 1.7- zorluğu. "peaceful", "easy", "normal", "difficult".</value>
+  </data>
+  <data name="MCSettings.Enabled" xml:space="preserve">
+    <value>Devre dışı bırakılırsa aşağıdaki ayarlar sunucuya gönderilmez.</value>
+  </data>
+  <data name="MCSettings.Locale" xml:space="preserve">
+    <value>Minecraft'ta uygulanan herhangi bir dili kullanın.</value>
+  </data>
+  <data name="MCSettings.MainHand" xml:space="preserve">
+    <value>MC 1.9+ ana el. "left" veya "right".</value>
+  </data>
+  <data name="MCSettings.RenderDistance" xml:space="preserve">
+    <value>Değer aralığı: [0 - 255].</value>
+  </data>
+  <data name="Proxy" xml:space="preserve">
+    <value>Doğrudan bağlanmak yerine bir proxy aracılığıyla sunucuya bağlanın
+Mojang oturum hizmetleri ağınızda engelliyse proxy kullanarak giriş yapmak için Enabled_Login=true olarak ayarlayın.
+Minecraft oyun sunucusuna bağlantı güvenlik duvarı tarafından engelleniyorsa oyun sunucusuna bağlanmak için proxy kullanmak üzere Enabled_Ingame=true olarak ayarlayın.
+/!\ enabled=true olarak ayarlamadan önce sunucu kurallarınızın Proxy'lere veya VPN'lere izin verdiğinden emin olun, aksi takdirde sonuçlarıyla karşılaşabilirsiniz!</value>
+  </data>
+  <data name="Proxy.Enabled_Ingame" xml:space="preserve">
+    <value>Oyun sunucusuna bir proxy üzerinden bağlanılıp bağlanılmayacağı.</value>
+  </data>
+  <data name="Proxy.Enabled_Login" xml:space="preserve">
+    <value>Giriş sunucusuna bir proxy üzerinden bağlanılıp bağlanılmayacağı.</value>
+  </data>
+  <data name="Proxy.Enabled_Update" xml:space="preserve">
+    <value>MCC güncellemelerinin proxy üzerinden indirilip indirilmeyeceği.</value>
+  </data>
+  <data name="Proxy.Password" xml:space="preserve">
+    <value>Yalnızca parola korumalı proxy'ler için gereklidir.</value>
+  </data>
+  <data name="Proxy.Proxy_Type" xml:space="preserve">
+    <value>Desteklenen türler: "HTTP", "SOCKS4", "SOCKS4a", "SOCKS5".</value>
+  </data>
+  <data name="Proxy.Server" xml:space="preserve">
+    <value>Proxy sunucusu giriş için HTTPS'e ve oynamak için 443 dışındaki bağlantı noktalarına izin vermelidir.</value>
+  </data>
+  <data name="Proxy.Username" xml:space="preserve">
+    <value>Yalnızca parola korumalı proxy'ler için gereklidir.</value>
+  </data>
+  <data name="Signature" xml:space="preserve">
+    <value>Sohbet imzasıyla ilgili ayarlar (minecraft 1.19+ etkiler)</value>
+  </data>
+  <data name="Signature.LoginWithSecureProfile" xml:space="preserve">
+    <value>Yalnızca Microsoft hesapları. Devre dışı bırakılırsa sohbeti imzalayamaz ve "enforce-secure-profile=true" ile yapılandırılmış sunuculara katılamazsınız</value>
+  </data>
+  <data name="Signature.MarkIllegallySignedMsg" xml:space="preserve">
+    <value>Meşru bir imzası olmayan sohbeti işaretlemek için kırmızı renk bloğu kullan</value>
+  </data>
+  <data name="Signature.MarkLegallySignedMsg" xml:space="preserve">
+    <value>Meşru imzaları olan sohbeti işaretlemek için yeşil renk bloğu kullan</value>
+  </data>
+  <data name="Signature.MarkModifiedMsg" xml:space="preserve">
+    <value>Sunucu tarafından değiştirilmiş sohbeti işaretlemek için sarı renk bloğu kullan.</value>
+  </data>
+  <data name="Signature.MarkSystemMessage" xml:space="preserve">
+    <value>Sistem mesajını işaretlemek için gri renk bloğu kullan (her zaman imzasız)</value>
+  </data>
+  <data name="Signature.ShowIllegalSignedChat" xml:space="preserve">
+    <value>Yasal imzaları olmayan sohbet ve komutlardaki mesajların gösterilip gösterilmeyeceği</value>
+  </data>
+  <data name="Signature.ShowModifiedChat" xml:space="preserve">
+    <value>Sunucu tarafından değiştirilen mesajları görüntülemek için true, orijinal imzalı mesajları görüntülemek için false olarak ayarlayın</value>
+  </data>
+  <data name="Signature.SignChat" xml:space="preserve">
+    <value>MCC'den gönderilen sohbetin imzalanıp imzalanmayacağı</value>
+  </data>
+  <data name="Signature.SignMessageInCommand" xml:space="preserve">
+    <value>MCC tarafından gönderilen komutlarda yer alan mesajların imzalanıp imzalanmayacağı. Örneğin "/msg" ve "/me" içindeki mesaj</value>
+  </data>
+  <data name="ChatBot.ItemsCollector.Collect_All_Item_Types" xml:space="preserve">
+    <value>true olarak ayarlanırsa bot, türlerinden bağımsız olarak tüm eşyaları toplar. Beyaz listeye alınmış eşya türlerini kullanmak istiyorsanız bunu false olarak ayarlayarak devre dışı bırakın</value>
+  </data>
+  <data name="ChatBot.ItemsCollector.Items_Whitelist" xml:space="preserve">
+    <value>Bu listede botun hangi eşyaları toplayacağını belirtebilirsiniz. Bunu etkinleştirmek için Collect_All_Item_Types değerini false olarak ayarlayın. (NOT: Bu, botun yanlışlıkla başka eşyalar almasını engellemez, yalnızca beyaz listedeki eşyaları bulduğu konumlara gider)\nEşya türlerinin listesini burada görebilirsiniz: https://raw.githubusercontent.com/MCCTeam/Minecraft-Console-Client/master/MinecraftClient/Inventory/ItemType.cs</value>
+  </data>
+  <data name="ChatBot.ItemsCollector.Delay_Between_Tasks" xml:space="preserve">
+    <value>Botun eşyaları taraması arasındaki gecikme, milisaniye cinsinden (Önerilen: 300-500)</value>
+  </data>
+  <data name="ChatBot.ItemsCollector.Collection_Radius" xml:space="preserve">
+    <value>Botun toplanacak eşyaları arayacağı yarıçap (Varsayılan: 30)</value>
+  </data>
+  <data name="ChatBot.ItemsCollector.Always_Return_To_Start" xml:space="preserve">
+    <value>true olarak ayarlanırsa bot, toplanacak eşya kalmadığında başlangıç konumuna geri döner</value>
+  </data>
+  <data name="ChatBot.ItemsCollector.Prioritize_Clusters" xml:space="preserve">
+    <value>true olarak ayarlanırsa bot, en yakın eşyalar yerine kümelenmiş eşyaların peşinden gider</value>
+  </data>
+  <data name="ChatBot.ItemsCollector" xml:space="preserve">
+    <value>Yerdeki eşyaları toplayan bir Sohbet Botu</value>
+  </data>
+  <data name="ChatBot.DiscordRpc" xml:space="preserve">
+    <value>Geçerli Minecraft oturum bilgilerinizle bir Discord Rich Presence durumu göster.
+Kurulum:
+1. https://discord.com/developers/applications adresine gidin ve Discord hesabınızla giriş yapın.
+2. "New Application"a tıklayın, bir ad verin (örn. "MCC") ve onaylayın.
+3. Uygulama sayfasında "Application ID"yi kopyalayıp aşağıdaki "ApplicationId" alanına yapıştırın.
+4. (İsteğe bağlı) LargeImageKey/SmallImageKey için özel görüntüler yüklemek üzere "Rich Presence" -&gt; "Art Assets" bölümüne gidin.
+Not: Bu, Bot Token GEREKTİRMEZ, yalnızca bir Application ID gerektirir. Discord, MCC ile aynı makinede çalışıyor olmalıdır.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ApplicationId" xml:space="preserve">
+    <value>Discord Application ID'niz. Bir tane oluşturun: https://discord.com/developers/applications</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.PresenceDetails" xml:space="preserve">
+    <value>Rich Presence ekranının üst satırı. Yer tutucuları destekler.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.PresenceState" xml:space="preserve">
+    <value>Rich Presence ekranının ikinci satırı. Yer tutucuları destekler.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.LargeImageKey" xml:space="preserve">
+    <value>Discord uygulamanıza yüklenen büyük görüntü varlığının anahtarı.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.LargeImageText" xml:space="preserve">
+    <value>Büyük görüntü için ipucu metni. Yer tutucuları destekler.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.SmallImageKey" xml:space="preserve">
+    <value>Discord uygulamanıza yüklenen küçük görüntü varlığının anahtarı (gizlemek için boş bırakın).</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.SmallImageText" xml:space="preserve">
+    <value>Küçük görüntü için ipucu metni. Yer tutucuları destekler.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ShowServerAddress" xml:space="preserve">
+    <value>Discord durumunda sunucu adresini (host ve port) göster. Devre dışı bırakıldığında {server_host} ve {server_port} maskelenir.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ShowCoordinates" xml:space="preserve">
+    <value>Discord durumunda oyuncu koordinatlarını göster. Devre dışı bırakıldığında {x}, {y}, {z} maskelenir.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ShowHealth" xml:space="preserve">
+    <value>Discord durumunda can ve açlık seviyesini göster. Devre dışı bırakıldığında {health}, {max_health}, {food} maskelenir.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ShowDimension" xml:space="preserve">
+    <value>Discord durumunda geçerli boyutu göster. Devre dışı bırakıldığında {dimension} maskelenir.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ShowGamemode" xml:space="preserve">
+    <value>Discord durumunda geçerli oyun modunu göster. Devre dışı bırakıldığında {gamemode} maskelenir.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ShowElapsedTime" xml:space="preserve">
+    <value>Discord durumunda geçen oturum süresini göster.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.ShowPlayerCount" xml:space="preserve">
+    <value>Discord durumunda çevrimiçi oyuncu sayısını grup boyutu olarak göster.</value>
+  </data>
+  <data name="ChatBot.DiscordRpc.UpdateIntervalSeconds" xml:space="preserve">
+    <value>Discord durumunun ne sıklıkla (saniye cinsinden) yenileneceği. Minimum: 1</value>
+  </data>
+  <data name="ChatBot.WebSocketBot" xml:space="preserve">
+    <value>İstemciyi Web Sockets kullanarak uzaktan kontrol edin.\n# Bu, MCC'de uzaktan ve asenkron olarak prosedürleri çalıştırabilen bir uygulama geliştirmek istiyorsanız kullanışlıdır.\n# JavaScript ile yazılmış örnek uygulama: https://github.com/milutinke/MCC.js.git\n# Protokol spesifikasyonu yakında belgelerde yer alacaktır.</value>
+  </data>
+  <data name="ChatBot.WebSocketBot.Ip" xml:space="preserve">
+    <value>Websocket sunucusunun bağlanacağı IP adresi.</value>
+  </data>
+  <data name="ChatBot.WebSocketBot.Port" xml:space="preserve">
+    <value>Websocket sunucusunun bağlanacağı Port.</value>
+  </data>
+  <data name="ChatBot.WebSocketBot.Password" xml:space="preserve">
+    <value>Websocket sunucusunda kimlik doğrulaması için kullanılacak parola (Varsayılan parolayı değiştirmeniz ve güçlü bir parola belirlemeniz önerilir).</value>
+  </data>
+  <data name="ChatBot.WebSocketBot.DebugMode" xml:space="preserve">
+    <value>Bu ayar, prosedürleri/komutları/işlevleri uzaktan çalıştırmak için bu sohbet botunu kullanan bir kütüphane geliştiren geliştiriciler içindir.</value>
+  </data>
+  <data name="ChatBot.WebSocketBot.AllowIpAlias" xml:space="preserve">
+    <value>"localhost" gibi IP takma adlarına izin ver veya konteyner kullanıyorsanız konteyner adı kullanılabilir...</value>
+  </data>
+  <data name="Main.Advanced.ignore_invalid_playername" xml:space="preserve">
+    <value>Geçersiz oyuncu adını yoksay</value>
+  </data>
+  <data name="Main.General.AuthlibServer" xml:space="preserve">
+    <value>Yggdrasil hesapları için kullanılacak authlib-injector kimlik doğrulama sunucusu</value>
+  </data>
+  <data name="AuthlibServer.Host" xml:space="preserve">
+    <value>Alan adı veya IP adresi</value>
+  </data>
+  <data name="AuthlibServer.Port" xml:space="preserve">
+    <value>Bağlanılacak port</value>
+  </data>
+  <data name="AuthlibServer.AuthlibInjectorAPIPath" xml:space="preserve">
+    <value>authlib-injector API konumunun yol bileşeni. Daha fazla bilgi için authlib-injector belgelerine bakın.</value>
+  </data>
+  <data name="AuthlibServer.UseHttps" xml:space="preserve">
+    <value>authlib-injector sunucunuz düz HTTP kullanıyorsa false olarak ayarlayın (örn. TLS olmadan yerel test için).</value>
+  </data>
+  <data name="Main.Advanced.enable_sentry" xml:space="preserve">
+    <value>Sentry hata günlüklemesini devre dışı bırakmak için false olarak ayarlayın.</value>
+  </data>
+  <data name="Console.Minimap" xml:space="preserve">
+    <value>Arazi ve varlıkları gösteren TUI mini harita katmanı için ayarlar.</value>
+  </data>
+  <data name="Console.Minimap.Enabled" xml:space="preserve">
+    <value>TUI modunda başlangıçta mini haritanın görünür olup olmayacağı.</value>
+  </data>
+  <data name="Console.Minimap.Zoom" xml:space="preserve">
+    <value>Piksel başına blok, 1-16. 1 = en yakın (1:1), 16 = en uzak (piksel başına 16 blok).</value>
+  </data>
+  <data name="Console.Minimap.Width" xml:space="preserve">
+    <value>Piksel (karakter) cinsinden harita genişliği. Aralık 10-120, varsayılan 40.</value>
+  </data>
+  <data name="Console.Minimap.Height" xml:space="preserve">
+    <value>Piksel cinsinden harita yüksekliği (çift olmalıdır, yarım blok karakterleri kullanır). Aralık 4-80, varsayılan 40.</value>
+  </data>
+  <data name="Console.Minimap.Position" xml:space="preserve">
+    <value>Mini harita konumu: "top_left", "top_right", "center", "bottom_left" veya "bottom_right".</value>
+  </data>
+  <data name="Console.Minimap.ShowPlayerNames" xml:space="preserve">
+    <value>Mini haritada oyuncu adlarını göster.</value>
+  </data>
+  <data name="Console.Minimap.ShowHostileNames" xml:space="preserve">
+    <value>Mini haritada düşman mob adlarını göster.</value>
+  </data>
+  <data name="Console.Minimap.ShowNeutralNames" xml:space="preserve">
+    <value>Mini haritada nötr mob adlarını göster.</value>
+  </data>
+  <data name="Console.Minimap.ShowPassiveNames" xml:space="preserve">
+    <value>Mini haritada pasif mob adlarını göster.</value>
+  </data>
+  <data name="Console.Minimap.RefreshInterval" xml:space="preserve">
+    <value>Milisaniye cinsinden mini harita yenileme aralığı (100-5000).</value>
+  </data>
+  <data name="Console.Minimap.CaveMode" xml:space="preserve">
+    <value>Mağara oluşturma modu: "auto" (tavanı algıla), "on" (her zaman mağara görünümü), "off" (her zaman yüzey görünümü).</value>
+  </data>
+  <data name="Console.TabList" xml:space="preserve">
+    <value>/tab komutu ve canlı TUI sekme katmanı için ayarlar.</value>
+  </data>
+  <data name="Console.TabList.ShowTeams" xml:space="preserve">
+    <value>/tab çıktısında ayrı bir takım sütunu göster. Daha vanilla benzeri bir oyuncu listesi için varsayılan olarak devre dışıdır.</value>
+  </data>
+  <data name="Main.General.AuthlibUser" xml:space="preserve">
+    <value>Yggdrasil authlib çoklu kullanıcı seçimi.</value>
+  </data>
+  <data name="ChatBot.McpServer" xml:space="preserve">
+    <value>Minecraft'a bağlıyken gömülü bir MCP sunucusu barındır. Varsayılan olarak devre dışıdır.</value>
+  </data>
+  <data name="ChatBot.McpServer.Transport" xml:space="preserve">
+    <value>Gömülü MCP HTTP taşıma ayarları.</value>
+  </data>
+  <data name="ChatBot.McpServer.Capabilities" xml:space="preserve">
+    <value>MCP araç kategorilerini etkinleştir veya devre dışı bırak.</value>
+  </data>
+  <data name="ChatBot.McpServer.Enabled" xml:space="preserve">
+    <value>Yerleşik gömülü MCP sunucu botunu etkinleştir. Sunucu yalnızca oyuna katıldıktan sonra başlar ve bağlantı kesildiğinde durur.</value>
+  </data>
+  <data name="ChatBot.McpServer.Transport.BindHost" xml:space="preserve">
+    <value>Gömülü MCP HTTP dinleyicisinin bağlanacağı IP/host. Varsayılan yalnızca loopback'tir.</value>
+  </data>
+  <data name="ChatBot.McpServer.Transport.Port" xml:space="preserve">
+    <value>Gömülü MCP HTTP dinleyicisi için TCP portu.</value>
+  </data>
+  <data name="ChatBot.McpServer.Transport.Route" xml:space="preserve">
+    <value>MCP uç noktalarının sunulduğu rota öneki.</value>
+  </data>
+  <data name="ChatBot.McpServer.Transport.RequireAuthToken" xml:space="preserve">
+    <value>MCP uç noktası istekleri için Bearer belirteci kimlik doğrulaması gerektir.</value>
+  </data>
+  <data name="ChatBot.McpServer.Transport.AuthTokenEnvVar" xml:space="preserve">
+    <value>Kimlik doğrulama gerektiğinde MCP kimlik doğrulama belirtecini içeren ortam değişkeni adı.</value>
+  </data>
+  <data name="ChatBot.McpServer.Capabilities.SessionStatus" xml:space="preserve">
+    <value>Oturum ve durum inceleme araçlarına izin ver.</value>
+  </data>
+  <data name="ChatBot.McpServer.Capabilities.ChatAndCommands" xml:space="preserve">
+    <value>Sohbet ve dahili komut araçlarına izin ver.</value>
+  </data>
+  <data name="ChatBot.McpServer.Capabilities.Movement" xml:space="preserve">
+    <value>Hareket ve görüş kontrolü araçlarına izin ver.</value>
+  </data>
+  <data name="ChatBot.McpServer.Capabilities.Inventory" xml:space="preserve">
+    <value>Envanter okuma ve eylem araçlarına izin ver.</value>
+  </data>
+  <data name="ChatBot.McpServer.Capabilities.EntityWorld" xml:space="preserve">
+    <value>Varlık ve dünya inceleme araçlarına izin ver.</value>
+  </data>
+</root>

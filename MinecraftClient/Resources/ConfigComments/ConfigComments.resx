@@ -284,66 +284,6 @@ See this file for an up-to-date list of item types you can use with this bot: ht
     <value>Automatically eat food when your Hunger value is low
 You need to enable Inventory Handling to use this bot</value>
   </data>
-  <data name="ChatBot.AutoFishing" xml:space="preserve">
-    <value>Automatically catch fish using a fishing rod
-Guide: https://mccteam.github.io/g/bots/#auto-fishing
-You can use "/fish" to control the bot manually.
-/!\ Make sure server rules allow automated farming before using this bot</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Antidespawn" xml:space="preserve">
-    <value>Keep it as false if you have not changed it before.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Auto_Rod_Switch" xml:space="preserve">
-    <value>Switch to a new rod from inventory after the current rod is unavailable.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Auto_Start" xml:space="preserve">
-    <value>Whether to start fishing automatically after entering a world.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Cast_Delay" xml:space="preserve">
-    <value>How soon to re-cast after successful fishing.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Durability_Limit" xml:space="preserve">
-    <value>Will not use rods with less durability than this (full durability is 64). Set to zero to disable this feature.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Enable_Move" xml:space="preserve">
-    <value>This allows the player to change position/facing after each fish caught.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Fishing_Delay" xml:space="preserve">
-    <value>How long after entering the game to start fishing (seconds).</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Fishing_Timeout" xml:space="preserve">
-    <value>Fishing timeout (seconds). Timeout will trigger a re-cast.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Hook_Threshold" xml:space="preserve">
-    <value>A "stationary" hook that moves above this threshold in the Y-axis will be considered to have caught a fish.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Enable_Velocity_Detection" xml:space="preserve">
-    <value>Enable fish bite detection using fishing bobber velocity packets.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Velocity_Hook_Threshold" xml:space="preserve">
-    <value>Velocity Y threshold (blocks/tick). Values below this are treated as a bite. Keep this value negative.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Enable_Sound_Detection" xml:space="preserve">
-    <value>Enable fish bite detection using splash sounds near the fishing bobber.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Sound_Distance" xml:space="preserve">
-    <value>Maximum distance (blocks) between splash sound and bobber to treat it as a bite.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Detection_Warmup" xml:space="preserve">
-    <value>Delay (seconds) after bobber spawn before bite detection starts. Helps ignore cast-entry splash/motion.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Log_Fish_Bobber" xml:space="preserve">
-    <value>Used to adjust the above two thresholds, which when enabled will print the change in the position of the fishhook entity upon receipt of its movement packet.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Mainhand" xml:space="preserve">
-    <value>Use the mainhand or the offhand to hold the rod.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Movements" xml:space="preserve">
-    <value>It will move in order "1-&gt;2-&gt;3-&gt;4-&gt;3-&gt;2-&gt;1-&gt;2-&gt;..." and can change position or facing or both each time. It is recommended to change the facing only.</value>
-  </data>
-  <data name="ChatBot.AutoFishing.Stationary_Threshold" xml:space="preserve">
-    <value>Hook movement in the X and Z axis less than this value will be considered stationary.</value>
-  </data>
   <data name="ChatBot.AutoRelog" xml:space="preserve">
     <value>Automatically relog when disconnected by server, for example because the server is restating
 /!\ Use Ignore_Kick_Message=true at own risk! Server staff might not appreciate if you auto-relog on manual kicks</value>
