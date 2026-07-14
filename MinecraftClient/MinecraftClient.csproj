@@ -7,7 +7,13 @@
     <LangVersion>default</LangVersion>
     <Nullable>enable</Nullable>
     <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Compression + runtime self-extraction of native libs to temp is the exact profile heuristic
+         AV engines (e.g. Webroot "W32.Trojan.Gen") flag as a packer on unsigned .NET single-file
+         builds. The launcher already ships MCC in its own folder, so native libraries can sit next
+         to the exe instead of being bundled and self-extracted, and the managed bundle stays
+         uncompressed to avoid the high-entropy "packed payload" signature. -->
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <!-- Consolonia transitively pulls in Avalonia build tasks; MCC has no XAML resources,
          so disable the transitive Avalonia compilation to avoid file-lock races in parallel builds. -->
     <EnableAvaloniaCompilationByDefault>false</EnableAvaloniaCompilationByDefault>

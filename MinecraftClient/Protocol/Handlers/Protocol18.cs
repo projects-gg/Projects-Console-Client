@@ -5019,10 +5019,27 @@ namespace MinecraftClient.Protocol.Handlers
 
             if (protocolVersion >= MC_1_20_6_Version && !isOnlineMode)
             {
-                List<byte> fields = new();
-                fields.AddRange(dataTypes.GetString(command));
-                SendPacket(PacketTypesOut.ChatCommand, fields);
-                return true;
+                // A dead socket must be reported, not thrown: bots send from Update() and an escaping
+                // SocketException would surface as a bot crash instead of a lost connection.
+                try
+                {
+                    List<byte> fields = new();
+                    fields.AddRange(dataTypes.GetString(command));
+                    SendPacket(PacketTypesOut.ChatCommand, fields);
+                    return true;
+                }
+                catch (SocketException)
+                {
+                    return false;
+                }
+                catch (System.IO.IOException)
+                {
+                    return false;
+                }
+                catch (ObjectDisposedException)
+                {
+                    return false;
+                }
             }
 
             try

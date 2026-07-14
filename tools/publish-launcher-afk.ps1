@@ -30,7 +30,13 @@ param(
 
     [string]$Runtime = 'win-x64',
 
-    [string]$OutputDir
+    [string]$OutputDir,
+
+    # Projects Launcher ile ayni self-signed kod imzalama sertifikasi (CurrentUser\My).
+    # Bos birakilirsa imzalama atlanir.
+    [string]$CertThumbprint = 'FE0D0695310EE6BE847D06DF03E520113747D133',
+
+    [string]$TimestampUrl = 'http://timestamp.digicert.com'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,12 +63,21 @@ New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 Write-Host "MCC yayimlaniyor ($Runtime)..." -ForegroundColor Cyan
 
 # Tek dosya + kendi kendine yeten: hedef makinede .NET 10 runtime aranmaz.
+#
+# IncludeNativeLibrariesForSelfExtract=false (csproj varsayilaniyla ayni): native kutuphaneler
+# calisma aninda %TEMP% altina KENDINI ACMAZ, exe'nin yaninda duran gevsek .dll'ler olarak kalir.
+# Kendini acan tek dosya paketi, imzali/imzasiz farketmeksizin AV motorlarinca "packer/dropper"
+# (or. Webroot "W32.Trojan.Gen") olarak isaretlenen tam profildir; launcher zaten paketin
+# tamamini kendi 'bin' klasorune acip exe'yi oradan calistirdigi icin gevsek native dll'ler sorunsuz.
+# Onceden burada '=true' verilerek csproj'daki guvenli deger EZILIYOR ve trojan yanlis-pozitifi
+# geri geliyordu. Managed paket ayrica sikistirilmaz (yuksek entropi "packed payload" imzasindan kacinilir).
 & dotnet publish $project `
     -c Release `
     -r $Runtime `
     --self-contained true `
     -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:IncludeNativeLibrariesForSelfExtract=false `
+    -p:EnableCompressionInSingleFile=false `
     -p:DebugType=none `
     -o $publishDir
 
@@ -81,6 +96,53 @@ $clientExeName = 'Projects-Konsol-Hesap.exe'
 $exe = Join-Path $publishDir $clientExeName
 Move-Item -Path $publishedExe -Destination $exe -Force
 Write-Host "Istemci yeniden adlandirildi: $clientExeName" -ForegroundColor Cyan
+
+# --- Authenticode imzalama -------------------------------------------------
+# Projects Launcher ile ayni 'Projects' sertifikasiyla imzalar; boylece exe'ye
+# yayinci kimligi eklenir. NOT: sertifika self-signed oldugundan son kullanici
+# makinelerinde SmartScreen/AV uyarisini TAMAMEN kaldirmaz; yalnizca sertifikanin
+# Guvenilir Yayincilar/Kok deposunda oldugu makinelerde tam gecerlidir.
+function Find-SignTool {
+    $picks = @()
+    $kits = 'C:\Program Files (x86)\Windows Kits\10\bin'
+    if (Test-Path $kits) {
+        $picks += Get-ChildItem $kits -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\' } |
+            Sort-Object FullName -Descending |
+            Select-Object -ExpandProperty FullName
+    }
+    $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($cmd) { $picks += $cmd.Source }
+    return ($picks | Select-Object -First 1)
+}
+
+if ([string]::IsNullOrWhiteSpace($CertThumbprint)) {
+    Write-Host 'CertThumbprint bos - imzalama atlandi.' -ForegroundColor Yellow
+}
+else {
+    $signtool = Find-SignTool
+    if (-not $signtool) { throw 'signtool.exe bulunamadi (Windows SDK gerekli).' }
+
+    $cert = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+        Where-Object { $_.Thumbprint -eq $CertThumbprint } | Select-Object -First 1
+    if (-not $cert) { throw "Imza sertifikasi bulunamadi (thumbprint $CertThumbprint). Sertifika depoda mi?" }
+
+    Write-Host "Imzalaniyor: $clientExeName  (cert: $($cert.Subject))" -ForegroundColor Cyan
+    $tsServers = @($TimestampUrl, 'http://timestamp.sectigo.com', 'http://time.certum.pl') | Where-Object { $_ }
+    $signed = $false
+    foreach ($ts in $tsServers) {
+        & $signtool sign /sha1 $CertThumbprint /fd SHA256 /tr $ts /td SHA256 $exe
+        if ($LASTEXITCODE -eq 0) { $signed = $true; break }
+        Write-Host "  timestamp basarisiz ($ts), sonraki sunucu deneniyor..." -ForegroundColor Yellow
+    }
+    if (-not $signed) { throw 'signtool imzalama basarisiz (tum timestamp sunuculari denendi).' }
+
+    $sig = Get-AuthenticodeSignature -FilePath $exe
+    Write-Host "Imza durumu: $($sig.Status)  imzalayan: $($sig.SignerCertificate.Subject)" -ForegroundColor DarkCyan
+    if ($sig.Status -ne 'Valid') {
+        Write-Host "  NOT: self-signed sertifika bu makinede Guvenilir Kok'e ekli degilse durum 'Valid' gorunmeyebilir; imza yine de dosyaya eklenmistir." -ForegroundColor Yellow
+    }
+}
 
 # Launcher zip'in kokunde Projects-Konsol-Hesap.exe bekler; ara klasor olusturma.
 $zipPath = Join-Path $OutputDir "projects-afk-$Version.zip"

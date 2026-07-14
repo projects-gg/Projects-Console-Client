@@ -313,6 +313,9 @@ namespace MinecraftClient.ChatBots
                         PerformInternalCommand(toPerform, ref response, localVars);
                         if (response.status != CmdResult.Status.Done || !string.IsNullOrWhiteSpace(response.result))
                             LogToConsole(response);
+
+                        // Notify the hosting launcher (no-op outside bridge mode) so it can e.g. play a sound.
+                        LauncherBridge.Emit("autorespond", new() { ["u"] = sender });
                     }
                 }
             }

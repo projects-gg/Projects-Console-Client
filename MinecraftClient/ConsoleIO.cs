@@ -57,6 +57,48 @@ namespace MinecraftClient
         /// </summary>
         public static bool BasicIO_NoColor = false;
 
+        private static readonly object basicIOReadLock = new();
+        private static Thread? basicIOReadThread;
+
+        /// <summary>
+        /// Raised for every line read from the standard input while in BasicIO mode.
+        /// </summary>
+        public static event EventHandler<string>? BasicIOMessageReceived;
+
+        /// <summary>
+        /// Start the BasicIO standard input reader.
+        /// Only one reader may exist for the whole process: a blocking Console.ReadLine() cannot be
+        /// cancelled, so a per-client reader would survive an AutoRelog restart and steal (and drop)
+        /// the lines typed after it, making the input silently disappear.
+        /// </summary>
+        public static void StartBasicIOReadThread()
+        {
+            lock (basicIOReadLock)
+            {
+                if (basicIOReadThread is not null)
+                    return;
+
+                basicIOReadThread = new Thread(BasicIOReadLoop)
+                {
+                    IsBackground = true,
+                    Name = "MCC BasicIO read thread"
+                };
+                basicIOReadThread.Start();
+            }
+        }
+
+        private static void BasicIOReadLoop()
+        {
+            while (true)
+            {
+                string? input = Console.ReadLine();
+                if (input is null)
+                    return;
+
+                BasicIOMessageReceived?.Invoke(null, input);
+            }
+        }
+
         /// <summary>
         /// Determine whether WriteLineFormatted() should prepend lines with timestamps by default.
         /// </summary>

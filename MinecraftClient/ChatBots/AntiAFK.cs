@@ -171,7 +171,11 @@ namespace MinecraftClient.ChatBots
                 }
             }
 
-            SendText(Config.Command);
+            // An empty command means "move only": sending it would either be dropped or answered with an
+            // "unknown command" line by the server on every single run.
+            if (!string.IsNullOrWhiteSpace(Config.Command))
+                SendText(Config.Command);
+
             if (Config.Use_Sneak)
             {
                 Sneak(previousSneakState);

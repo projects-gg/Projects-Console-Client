@@ -230,7 +230,6 @@ namespace MinecraftClient
         SessionToken _sessionToken;
         CancellationTokenSource? cmdprompt = null;
         Tuple<Thread, CancellationTokenSource>? timeoutdetector = null;
-        private Thread? basicIOReadThread;
         private int transferInProgress = 0;
         private bool consoleReadThreadOwned = false;
         private bool consoleHandlersAttached = false;
@@ -534,18 +533,16 @@ namespace MinecraftClient
 
             if (ConsoleIO.BasicIO || ConsoleIO.Backend is null)
             {
-                if (!consoleReadThreadOwned)
+                // The stdin reader belongs to the process, not to this client: it survives an AutoRelog
+                // restart untouched, so only the subscription has to follow the current client.
+                if (!consoleHandlersAttached)
                 {
-                    CancellationToken token = cmdprompt.Token;
-                    basicIOReadThread = new Thread(() => BasicIOReadLoop(token))
-                    {
-                        IsBackground = true,
-                        Name = "MCC BasicIO read thread"
-                    };
-                    basicIOReadThread.Start();
-                    consoleReadThreadOwned = true;
+                    ConsoleIO.BasicIOMessageReceived += ConsoleReaderOnMessageReceived;
+                    consoleHandlersAttached = true;
                 }
 
+                ConsoleIO.StartBasicIOReadThread();
+                consoleReadThreadOwned = true;
                 return;
             }
 
@@ -568,9 +565,14 @@ namespace MinecraftClient
             if (ConsoleIO.BasicIO || ConsoleIO.Backend is null)
             {
                 cmdprompt?.Cancel();
-                basicIOReadThread = null;
+
+                if (consoleHandlersAttached)
+                {
+                    ConsoleIO.BasicIOMessageReceived -= ConsoleReaderOnMessageReceived;
+                    consoleHandlersAttached = false;
+                }
+
                 consoleReadThreadOwned = false;
-                consoleHandlersAttached = false;
                 return;
             }
 
@@ -585,19 +587,6 @@ namespace MinecraftClient
             {
                 ConsoleIO.Backend.StopReadThread();
                 consoleReadThreadOwned = false;
-            }
-        }
-
-        private void BasicIOReadLoop(CancellationToken token)
-        {
-            while (!token.IsCancellationRequested)
-            {
-                string? input = Console.ReadLine();
-                if (input is null)
-                    return;
-
-                if (!token.IsCancellationRequested)
-                    ConsoleReaderOnMessageReceived(this, input);
             }
         }
 
@@ -882,6 +871,10 @@ namespace MinecraftClient
                 handler.Disconnect();
                 handler.Dispose();
             }
+
+            // Detach from the console before the next client takes over, otherwise this dead client
+            // would keep receiving the user's input and silently drop it.
+            StopConsoleSession();
 
             if (cmdprompt is not null)
             {

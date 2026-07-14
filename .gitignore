@@ -453,3 +453,4 @@ execlaude.bat
 /MinecraftClient/graphify-out
 CLAUDE.md
 AGENTS.md
+/dist

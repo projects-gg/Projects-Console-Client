@@ -30,9 +30,11 @@ using System.Runtime.InteropServices;
 //
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
-// [assembly: AssemblyVersion("1.0.*")]
-// [assembly: AssemblyVersion("1.0.0")]
-// [assembly: AssemblyFileVersion("1.0.0")]
+// A concrete version is set so the published binary does not report 0.0.0.0, which reads as
+// unfinished/suspicious software to AV heuristics and reputation systems.
+[assembly: AssemblyVersion("26.2.0.0")]
+[assembly: AssemblyFileVersion("26.2.0.0")]
+[assembly: AssemblyInformationalVersion("26.2")]
 
 // AppVeyor Build Number
 // MCC will use the following command as CMD pre-build script in AppVeyor msbuild settings:

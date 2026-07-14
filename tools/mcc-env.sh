@@ -322,8 +322,8 @@ mcc-publish() {
     --self-contained=true \
     -c Release \
     -p:UseAppHost=true \
-    -p:IncludeNativeLibrariesForSelfExtract=true \
-    -p:EnableCompressionInSingleFile=true \
+    -p:IncludeNativeLibrariesForSelfExtract=false \
+    -p:EnableCompressionInSingleFile=false \
     -p:DebugType=Embedded \
     "${extra_args[@]}"
 }

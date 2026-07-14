@@ -312,7 +312,7 @@ namespace MinecraftClient.ChatBots
                 task.Trigger_On_Times.Enable,
                 task.Trigger_On_Interval.Enable,
                 string.Join(", ", Array.ConvertAll(task.Trigger_On_Times.Times, time => time.ToString())),
-                task.Trigger_On_Interval.MinTime + '-' + task.Trigger_On_Interval.MaxTime,
+                task.Trigger_On_Interval.MinTime.ToString() + "-" + task.Trigger_On_Interval.MaxTime.ToString(),
                 task.Action
             );
         }
