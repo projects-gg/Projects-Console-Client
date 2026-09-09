@@ -287,6 +287,7 @@ namespace MinecraftClient.Protocol.Handlers
                 },
                 _ => ChatParser.ChatId2Type
             };
+            ChatParser.ClearChatTypeDecorations();
         }
 
         /// <summary>
@@ -304,7 +305,10 @@ namespace MinecraftClient.Protocol.Handlers
             {
                 Stopwatch stopWatch = Stopwatch.StartNew();
                 long nextUpdateDue = 0;
-                while (!packetQueue.IsAddingCompleted)
+                // Continue until the reader has finished and every queued packet has been handled.
+                // A server can close immediately after a Disconnect packet, completing the queue
+                // while that final packet is still waiting to be processed.
+                while (!packetQueue.IsCompleted)
                 {
                     cancelToken.ThrowIfCancellationRequested();
 
@@ -573,7 +577,6 @@ namespace MinecraftClient.Protocol.Handlers
                                     var isEnchantment = registryId == "minecraft:enchantment";
                                     var isDialog = registryId == "minecraft:dialog";
 
-                                    var availableChats = isChat ? new Dictionary<int, string>() : null;
                                     var dimensionIdMap = isDimension ? new Dictionary<int, string>() : null;
                                     var attributeIdMap = isAttribute ? new Dictionary<int, string>() : null;
                                     var enchantmentIdMap = isEnchantment ? new Dictionary<int, string>() : null;
@@ -588,7 +591,7 @@ namespace MinecraftClient.Protocol.Handlers
                                             nbtData = dataTypes.ReadNextNbt(packetData);
 
                                         if (isChat)
-                                            availableChats!.Add(i, entryId);
+                                            ChatParser.ReadChatType(i, entryId, nbtData);
                                         else if (isDimension)
                                         {
                                             dimensionIdMap!.Add(i, entryId);
@@ -608,9 +611,7 @@ namespace MinecraftClient.Protocol.Handlers
                                             handler.OnDialogRegistryData(i, entryId, dialogNbtParser.Parse(nbtData));
                                     }
 
-                                    if (isChat)
-                                        ChatParser.ReadChatType(availableChats!);
-                                    else if (isDimension)
+                                    if (isDimension)
                                     {
                                         World.SetDimensionIdMap(dimensionIdMap!);
                                         if (!handler.GetTerrainEnabled() || !World.HasAnyDimension())
@@ -1229,7 +1230,8 @@ namespace MinecraftClient.Protocol.Handlers
 
                         // Network Target
                         // net.minecraft.network.message.MessageType.Serialized#write
-                        var chatTypeId = dataTypes.ReadNextVarInt(packetData);
+                        var chatTypeId = ChatParser.ReadChatTypeHolder(
+                            dataTypes, packetData, protocolVersion, out var directChatTypeDecoration);
                         var chatName = dataTypes.ReadNextChat(packetData);
                         var targetName = dataTypes.ReadNextBool(packetData)
                             ? dataTypes.ReadNextChat(packetData)
@@ -1278,7 +1280,10 @@ namespace MinecraftClient.Protocol.Handlers
                         }
 
                         ChatMessage chat = new(message, false, chatTypeId, senderUuid, unsignedChatContent,
-                            senderDisplayName, senderTeamName, timestamp, messageSignature, verifyResult);
+                            senderDisplayName, senderTeamName, timestamp, messageSignature, verifyResult)
+                        {
+                            chatTypeDecoration = directChatTypeDecoration
+                        };
                         lock (MessageSigningLock)
                             Acknowledge(chat);
                         handler.OnTextReceived(chat);
@@ -1342,14 +1347,17 @@ namespace MinecraftClient.Protocol.Handlers
                     break;
                 case PacketTypesIn.ProfilelessChatMessage:
                     var message_ = dataTypes.ReadNextChat(packetData);
-                    var messageType_ = dataTypes.ReadNextVarInt(packetData);
+                    var messageType_ = ChatParser.ReadChatTypeHolder(
+                        dataTypes, packetData, protocolVersion, out var directProfilelessChatTypeDecoration);
                     var messageName = dataTypes.ReadNextChat(packetData);
                     var targetName_ = dataTypes.ReadNextBool(packetData)
                         ? dataTypes.ReadNextChat(packetData)
                         : null;
-                    ChatMessage profilelessChat = new(message_, targetName_ ?? messageName, false, messageType_,
+                    ChatMessage profilelessChat = new(message_, messageName, false, messageType_,
                         Guid.Empty, true);
                     profilelessChat.isSenderJson = false;
+                    profilelessChat.teamName = targetName_;
+                    profilelessChat.chatTypeDecoration = directProfilelessChatTypeDecoration;
                     handler.OnTextReceived(profilelessChat);
                     break;
                 case PacketTypesIn.CombatEvent:
@@ -3496,7 +3504,16 @@ namespace MinecraftClient.Protocol.Handlers
 
                 case PacketTypesIn.RecipeBookAdd:
                     if (protocolVersion >= MC_1_21_2_Version)
-                        HandleRecipeBookAdd(packetData);
+                    {
+                        try
+                        {
+                            HandleRecipeBookAdd(packetData);
+                        }
+                        catch
+                        {
+                            // Ignore this packet due to oversized VarInt from anti-MCC server
+                        }
+                    }
                     break;
                 case PacketTypesIn.RecipeBookRemove:
                     if (protocolVersion >= MC_1_21_2_Version)
@@ -4082,19 +4099,19 @@ namespace MinecraftClient.Protocol.Handlers
         {
             try
             {
-                if (netMain is not null)
-                {
-                    netMain.Item2.Cancel();
-                }
-
-                if (netReader is not null)
-                {
-                    netReader.Item2.Cancel();
-                    socketWrapper.Disconnect();
-                }
+                netMain?.Item2.Cancel();
             }
-            catch
+            finally
             {
+                try
+                {
+                    netReader?.Item2.Cancel();
+                }
+                finally
+                {
+                    socketWrapper.Disconnect();
+                    McClient.Instance?.DeleteAllCookies();
+                }
             }
         }
 
@@ -5731,6 +5748,13 @@ namespace MinecraftClient.Protocol.Handlers
             {
                 List<byte> fields = new();
                 fields.AddRange(DataTypes.GetVarInt(EntityID));
+
+                if (protocolVersion >= MC_26_1_Version && type == (int)InteractType.Attack)
+                {
+                    SendPacket(PacketTypesOut.Attack, fields);
+                    return true;
+                }
+
                 fields.AddRange(DataTypes.GetVarInt(type));
 
                 // Is player Sneaking (Only 1.16 and above)
@@ -6688,8 +6712,6 @@ namespace MinecraftClient.Protocol.Handlers
                         SendPacket(PacketTypesOut.CookieResponse, packet);
                         break;
                 }
-
-                McClient.Instance?.DeleteCookie(name);
                 return true;
             }
             catch (SocketException)

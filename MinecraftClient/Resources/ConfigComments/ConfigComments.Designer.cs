@@ -534,7 +534,7 @@ namespace MinecraftClient {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to When set to true, autorelog will reconnect regardless of kick messages..
+        ///   Looks up a localized string similar to Reconnect after any server kick or login rejection. Network interruptions always trigger Auto Relog..
         /// </summary>
         internal static string ChatBot_AutoRelog_Ignore_Kick_Message {
             get {
@@ -543,7 +543,7 @@ namespace MinecraftClient {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to If the kickout message matches any of the strings, then autorelog will be triggered..
+        ///   Looks up a localized string similar to Case-insensitive text fragments that trigger Auto Relog for server kicks and login rejections..
         /// </summary>
         internal static string ChatBot_AutoRelog_Kick_Messages {
             get {
@@ -552,7 +552,7 @@ namespace MinecraftClient {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Retries when failing to relog to the server. use -1 for unlimited retries..
+        ///   Looks up a localized string similar to Exact retry limit. Use 0 to disable retries or -1 for unlimited retries. The count resets after 60 seconds online..
         /// </summary>
         internal static string ChatBot_AutoRelog_Retries {
             get {
@@ -1880,6 +1880,15 @@ namespace MinecraftClient {
         internal static string Main_General_AuthlibServer {
             get {
                 return ResourceManager.GetString("Main.General.AuthlibServer", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Authlib-injector URL to use for Yggdrasil accounts. It must use http or https and include any required path..
+        /// </summary>
+        internal static string Main_General_AuthServerUrl {
+            get {
+                return ResourceManager.GetString("Main.General.AuthServerUrl", resourceCulture);
             }
         }
         

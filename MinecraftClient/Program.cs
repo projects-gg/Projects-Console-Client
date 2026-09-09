@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -51,12 +51,14 @@ namespace MinecraftClient
         public const string MCHighestVersion = "26.2";
         public static readonly string? BuildInfo = null;
 
-        private static Tuple<Thread, CancellationTokenSource>? offlinePrompt = null;
         private static IDisposable? _sentrySdk = null;
         private static bool useMcVersionOnce = false;
-        private static Thread? _restartThread = null;
-        private static readonly object _restartLock = new();
+        private static readonly RestartCoordinator restartCoordinator = new(ExecuteRestartAsync, ReportRestartFailure);
+        private static long connectionAttempt;
+        private static readonly AttemptOwnedRoute offlinePromptRoute = new();
+        private static int exitOnFailurePending;
         private static string settingsIniPath = "MinecraftClient.ini";
+        private static AuthenticationSelection? pendingAuthenticationSelection;
 
         // [SENTRY]
         // Setting this string to an empty string will disable Sentry
@@ -577,15 +579,19 @@ namespace MinecraftClient
             // Setup exit cleaning code
             ExitCleanUp.Add(() => { DoExit(); });
 
+            if (HasNoConfiguredLoginDetails())
+            {
+                if (!PromptForAuthenticationSelection())
+                    return;
+            }
+
             //Asking the user to type in missing data such as Username and Password
             bool useBrowser = Config.Main.General.AccountType == LoginType.microsoft && Config.Main.General.Method == LoginMethod.browser;
             bool useDeviceCode = Config.Main.General.AccountType == LoginType.microsoft && Config.Main.General.Method == LoginMethod.mcc;
             bool skipPassword = useBrowser || useDeviceCode;
-            if (string.IsNullOrWhiteSpace(InternalConfig.Account.Login) && !useBrowser)
+            if (string.IsNullOrWhiteSpace(InternalConfig.Account.Login) && !skipPassword)
             {
-                ConsoleIO.WriteLine(ConsoleIO.BasicIO ? Translations.mcc_login_basic_io : Translations.mcc_login);
-                InternalConfig.Account.Login = ConsoleIO.ReadLine().Trim();
-                if (string.IsNullOrWhiteSpace(InternalConfig.Account.Login))
+                if (!RequestLogin())
                 {
                     HandleFailure(Translations.error_login_blocked, false, ChatBot.DisconnectReason.LoginRejected);
                     return;
@@ -615,11 +621,154 @@ namespace MinecraftClient
                 InternalConfig.Account.Password = password;
         }
 
+        private static bool HasNoConfiguredLoginDetails()
+            => string.IsNullOrWhiteSpace(InternalConfig.Account.Login)
+               && string.IsNullOrWhiteSpace(InternalConfig.Account.Password);
+
+        private static bool PromptForAuthenticationSelection()
+        {
+            while (true)
+            {
+                ConsoleIO.WriteLine(Translations.mcc_auth_method_prompt);
+                string selection = ConsoleIO.ReadLine().Trim();
+
+                switch (selection.ToLowerInvariant())
+                {
+                    case "1":
+                    case "offline":
+                        BeginAuthenticationSelection(LoginType.mojang, LoginMethod.mcc);
+                        if (!RequestLogin())
+                        {
+                            DiscardAuthenticationSelection();
+                            HandleFailure(Translations.error_login_blocked, false, ChatBot.DisconnectReason.LoginRejected);
+                            return false;
+                        }
+
+                        InternalConfig.Account.Password = "-";
+                        return true;
+
+                    case "2":
+                    case "online":
+                    case "microsoft":
+                        BeginAuthenticationSelection(LoginType.microsoft, LoginMethod.mcc);
+                        return true;
+
+                    case "3":
+                    case "yggdrasil":
+                        BeginAuthenticationSelection(LoginType.yggdrasil, LoginMethod.mcc);
+                        if (!RequestLogin() || !RequestRequiredPassword())
+                        {
+                            DiscardAuthenticationSelection();
+                            HandleFailure(Translations.error_login_blocked, false, ChatBot.DisconnectReason.LoginRejected);
+                            return false;
+                        }
+
+                        if (!RequestAuthlibServer())
+                        {
+                            DiscardAuthenticationSelection();
+                            return false;
+                        }
+
+                        return true;
+
+                    default:
+                        ConsoleIO.WriteLine(Translations.mcc_auth_method_invalid);
+                        break;
+                }
+            }
+        }
+
+        private static void BeginAuthenticationSelection(LoginType accountType, LoginMethod method)
+        {
+            pendingAuthenticationSelection ??= new AuthenticationSelection(
+                Config.Main.General.AccountType,
+                Config.Main.General.Method,
+                Config.Main.General.AuthServerUrl);
+
+            Config.Main.General.AccountType = accountType;
+            Config.Main.General.Method = method;
+        }
+
+        private static bool RequestLogin()
+        {
+            ConsoleIO.WriteLine(ConsoleIO.BasicIO ? Translations.mcc_login_basic_io : Translations.mcc_login);
+            InternalConfig.Account.Login = ConsoleIO.ReadLine().Trim();
+            return !string.IsNullOrWhiteSpace(InternalConfig.Account.Login);
+        }
+
+        private static bool RequestRequiredPassword()
+        {
+            ConsoleIO.WriteLine(ConsoleIO.BasicIO ? string.Format(Translations.mcc_password_basic_io, InternalConfig.Account.Login) + "\n" : Translations.mcc_password_hidden);
+            string? password = ConsoleIO.BasicIO ? Console.ReadLine() : ConsoleIO.ReadPassword();
+            if (string.IsNullOrWhiteSpace(password))
+                return false;
+
+            InternalConfig.Account.Password = password;
+            return true;
+        }
+
+        private static bool RequestAuthlibServer()
+        {
+            while (true)
+            {
+                ConsoleIO.WriteLine(Translations.mcc_yggdrasil_url);
+                string authServerUrl = ConsoleIO.ReadLine().Trim();
+                if (!Config.Main.General.TrySetAuthServerUrl(authServerUrl)
+                    || !Config.Main.General.TryGetAuthServerUri(out Uri? authServerUri))
+                {
+                    ConsoleIO.WriteLine(Translations.mcc_yggdrasil_invalid_url);
+                    continue;
+                }
+
+                switch (ProtocolHandler.ValidateAuthlibServer(authServerUri))
+                {
+                    case ProtocolHandler.AuthlibServerValidationResult.Valid:
+                        return true;
+                    case ProtocolHandler.AuthlibServerValidationResult.Unreachable:
+                        ConsoleIO.WriteLine(Translations.mcc_yggdrasil_server_unreachable);
+                        break;
+                    default:
+                        ConsoleIO.WriteLine(Translations.mcc_yggdrasil_server_invalid);
+                        break;
+                }
+            }
+        }
+
+        private static void PersistAuthenticationSelection(SessionToken session)
+        {
+            if (pendingAuthenticationSelection is null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(InternalConfig.Account.Login))
+                InternalConfig.Account.Login = session.PlayerName;
+
+            Config.Main.General.Account = InternalConfig.Account;
+            WriteBackSettings();
+            pendingAuthenticationSelection = null;
+        }
+
+        private static void DiscardAuthenticationSelection()
+        {
+            if (pendingAuthenticationSelection is not AuthenticationSelection selection)
+                return;
+
+            Config.Main.General.AccountType = selection.AccountType;
+            Config.Main.General.Method = selection.Method;
+            Config.Main.General.AuthServerUrl = selection.AuthServerUrl;
+            pendingAuthenticationSelection = null;
+        }
+
+        private sealed record AuthenticationSelection(LoginType AccountType, LoginMethod Method, string AuthServerUrl);
+
+        internal static long CurrentConnectionAttempt => Volatile.Read(ref connectionAttempt);
+
         /// <summary>
         /// Start a new Client
         /// </summary>
         private static void InitializeClient()
         {
+            long attempt = Interlocked.Increment(ref connectionAttempt);
+
             // Ensure that we use the provided Minecraft version if we can't connect automatically.
             //
             // useMcVersionOnce is set to true on HandleFailure()
@@ -638,7 +787,7 @@ namespace MinecraftClient
                 ConsoleIO.WriteLineFormatted("§8" + Translations.mcc_offline, acceptnewlines: true);
                 result = ProtocolHandler.LoginResult.Success;
                 session.PlayerID = "0";
-                session.PlayerName = InternalConfig.Username;
+                session.PlayerName = InternalConfig.Account.Login;
             }
             else
             {
@@ -674,16 +823,25 @@ namespace MinecraftClient
 
                 if (result != ProtocolHandler.LoginResult.Success)
                 {
-                    ConsoleIO.WriteLine(string.Format(Translations.mcc_connecting, Config.Main.General.AccountType == LoginType.mojang ? "Minecraft.net" : (Config.Main.General.AccountType == LoginType.microsoft ? "Microsoft" : Config.Main.General.AuthServer.Host)));
+                    ConsoleIO.WriteLine(string.Format(Translations.mcc_connecting, Config.Main.General.AccountType == LoginType.mojang ? "Minecraft.net" : (Config.Main.General.AccountType == LoginType.microsoft ? "Microsoft" : Config.Main.General.AuthServerUrl)));
                     result = ProtocolHandler.GetLogin(InternalConfig.Account.Login, InternalConfig.Account.Password, Config.Main.General.AccountType, out session);
                 }
 
-                if (result == ProtocolHandler.LoginResult.Success && Config.Main.Advanced.SessionCache != CacheType.none)
-                    SessionCache.Store(loginLower, session);
+                if (result == ProtocolHandler.LoginResult.Success)
+                {
+                    PersistAuthenticationSelection(session);
+                    loginLower = ToLowerIfNeed(InternalConfig.Account.Login);
+
+                    if (Config.Main.Advanced.SessionCache != CacheType.none)
+                        SessionCache.Store(loginLower, session);
+                }
 
                 if (result == ProtocolHandler.LoginResult.Success)
                     session.SessionPreCheckTask = Task.Factory.StartNew(() => session.SessionPreCheck(Config.Main.General.AccountType));
             }
+
+            if (result == ProtocolHandler.LoginResult.Success)
+                PersistAuthenticationSelection(session);
 
             if (result == ProtocolHandler.LoginResult.Success)
             {
@@ -748,6 +906,8 @@ namespace MinecraftClient
                     }
                     Config.Main.SetServerIP(new MainConfigHelper.MainConfig.ServerInfoConfig(addressInput), true);
                 }
+
+                ConsoleInputRouter.EnsureStarted();
 
                 //Get server version
                 int protocolversion = 0;
@@ -839,7 +999,7 @@ namespace MinecraftClient
                     try
                     {
                         //Start the main TCP client
-                        client = new McClient(session, playerKeyPair, InternalConfig.ServerIP, InternalConfig.ServerPort, protocolversion, forgeInfo);
+                        client = new McClient(session, playerKeyPair, InternalConfig.ServerIP, InternalConfig.ServerPort, protocolversion, forgeInfo, attempt);
 
                         //Update console title
                         if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(Config.Main.Advanced.ConsoleTitle))
@@ -867,6 +1027,7 @@ namespace MinecraftClient
             }
             else
             {
+                DiscardAuthenticationSelection();
                 string failureMessage = Translations.error_login;
                 string failureReason = result switch
                 {
@@ -913,66 +1074,128 @@ namespace MinecraftClient
         /// <param name="keepAccountAndServerSettings">Optional, keep account and server settings</param>
         public static void Restart(int delaySeconds = 0, bool keepAccountAndServerSettings = false)
         {
-            TryRestart(delaySeconds, keepAccountAndServerSettings);
+            TryRestart(TimeSpan.FromSeconds(Math.Max(0, delaySeconds)), keepAccountAndServerSettings);
         }
 
-        internal static bool HasRestartPendingForAnotherThread
+        internal static bool HasRestartPending(long sourceConnectionAttempt)
         {
-            get
-            {
-                lock (_restartLock)
-                    return HasRestartPendingForAnotherThreadNoLock();
-            }
+            return restartCoordinator.HasScheduledRestart(sourceConnectionAttempt);
+        }
+
+        internal static RestartSettingsSnapshot CaptureRestartSettings()
+        {
+            return new RestartSettingsSnapshot(InternalConfig.Account, InternalConfig.ServerIP, InternalConfig.ServerPort);
+        }
+
+        internal static void RestoreRestartSettings(RestartSettingsSnapshot settingsSnapshot)
+        {
+            InternalConfig.Account = settingsSnapshot.Account;
+            InternalConfig.ServerIP = settingsSnapshot.ServerIP;
+            InternalConfig.ServerPort = settingsSnapshot.ServerPort;
         }
 
         internal static bool TryRestart(int delaySeconds = 0, bool keepAccountAndServerSettings = false)
         {
-            lock (_restartLock)
-            {
-                if (HasRestartPendingForAnotherThreadNoLock())
-                    return false;
-
-                ConsoleIO.Backend?.StopReadThread();
-                var thread = new Thread(new ThreadStart(delegate
-                {
-                    try
-                    {
-                        if (client is not null) { client.Disconnect(); ConsoleIO.Reset(); }
-                        if (offlinePrompt is not null)
-                        {
-                            if (ConsoleIO.Backend is not null)
-                                ConsoleIO.Backend.OnInputChange -= ConsoleIO.OfflineAutocompleteHandler;
-                            offlinePrompt.Item2.Cancel(); offlinePrompt.Item1.Join(); offlinePrompt = null; ConsoleIO.Reset();
-                        }
-                        if (delaySeconds > 0)
-                        {
-                            ConsoleIO.WriteLine(string.Format(Translations.mcc_restart_delay, delaySeconds));
-                            Thread.Sleep(delaySeconds * 1000);
-                        }
-                        ConsoleIO.WriteLine(Translations.mcc_restart);
-                        ReloadSettings(keepAccountAndServerSettings);
-                        InitializeClient();
-                    }
-                    finally
-                    {
-                        lock (_restartLock)
-                        {
-                            if (_restartThread == Thread.CurrentThread)
-                                _restartThread = null;
-                        }
-                    }
-                }));
-                _restartThread = thread;
-                thread.Start();
-                return true;
-            }
+            return TryRestart(TimeSpan.FromSeconds(Math.Max(0, delaySeconds)), keepAccountAndServerSettings);
         }
 
-        private static bool HasRestartPendingForAnotherThreadNoLock()
+        internal static bool TryRestart(TimeSpan delay, bool keepAccountAndServerSettings = false)
         {
-            return _restartThread is not null
-                && _restartThread.IsAlive
-                && _restartThread != Thread.CurrentThread;
+            return TryRestart(CurrentConnectionAttempt, delay, keepAccountAndServerSettings);
+        }
+
+        internal static bool TryRestart(
+            long sourceConnectionAttempt,
+            TimeSpan delay,
+            bool keepAccountAndServerSettings = false,
+            bool replaceUntilCommit = false,
+            Task? sourceCleanupCompletion = null)
+        {
+            if (Volatile.Read(ref exitOnFailurePending) != 0)
+                return false;
+
+            if (sourceConnectionAttempt != CurrentConnectionAttempt)
+                return false;
+
+            if (delay < TimeSpan.Zero)
+                delay = TimeSpan.Zero;
+
+            RestartSettingsSnapshot? settingsSnapshot = keepAccountAndServerSettings
+                ? CaptureRestartSettings()
+                : null;
+
+            bool scheduled = restartCoordinator.TrySchedule(
+                new RestartRequest(
+                    sourceConnectionAttempt,
+                    delay,
+                    keepAccountAndServerSettings,
+                    settingsSnapshot,
+                    replaceUntilCommit,
+                    sourceCleanupCompletion),
+                () => BeginOfflinePrompt(sourceConnectionAttempt));
+            return scheduled;
+        }
+
+        private static async Task ExecuteRestartAsync(RestartRequest request, CancellationToken cancellationToken)
+        {
+            if (request.ConnectionAttempt != CurrentConnectionAttempt)
+                return;
+
+            McClient? disconnectedClient = client;
+            if (disconnectedClient is not null)
+            {
+                disconnectedClient.Disconnect();
+                if (ReferenceEquals(client, disconnectedClient))
+                    client = null;
+            }
+
+            ConsoleIO.Reset();
+
+            if (request.Delay > TimeSpan.Zero)
+            {
+                ConsoleIO.WriteLine(string.Format(Translations.mcc_restart_delay, request.Delay.TotalSeconds));
+                await Task.Delay(request.Delay, TimeProvider.System, cancellationToken).ConfigureAwait(false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (request.ConnectionAttempt != CurrentConnectionAttempt
+                || !restartCoordinator.TryBeginCommit(request, out RestartRequest latestRequest)
+                || latestRequest.ConnectionAttempt != CurrentConnectionAttempt)
+            {
+                return;
+            }
+
+            ConsoleIO.WriteLine(Translations.mcc_restart);
+            ReloadSettings(latestRequest.KeepAccountAndServerSettings);
+            if (latestRequest.SettingsSnapshot is RestartSettingsSnapshot settingsSnapshot)
+            {
+                InternalConfig.Account = settingsSnapshot.Account;
+                InternalConfig.ServerIP = settingsSnapshot.ServerIP;
+                InternalConfig.ServerPort = settingsSnapshot.ServerPort;
+            }
+            TransferOfflinePrompt(latestRequest.ConnectionAttempt, latestRequest.ConnectionAttempt + 1);
+            InitializeClient();
+        }
+
+        private static void ReportRestartFailure(Exception exception)
+        {
+            SentrySdk.CaptureException(exception);
+            ConsoleIO.WriteLine(exception.ToString());
+            HandleFailure();
+        }
+
+        /// <summary>
+        /// Marks the current failure as terminal when MCC is running under an external supervisor.
+        /// Further restart requests are rejected so disconnect cleanup cannot revive the process.
+        /// </summary>
+        internal static bool PrepareExitOnFailure()
+        {
+            if (InternalConfig.InteractiveMode)
+                return false;
+
+            Interlocked.Exchange(ref exitOnFailurePending, 1);
+            restartCoordinator.Stop();
+            return true;
         }
 
         public static void DoExit(int exitcode = 0)
@@ -980,17 +1203,10 @@ namespace MinecraftClient
             WriteBackSettings();
             ConsoleIO.WriteLineFormatted("§a" + string.Format(Translations.config_saving, settingsIniPath));
 
+            restartCoordinator.Stop();
             if (client is not null) { client.Disconnect(); ConsoleIO.Reset(); }
-            if (offlinePrompt is not null)
-            {
-                if (ConsoleIO.Backend is not null)
-                    ConsoleIO.Backend.OnInputChange -= ConsoleIO.OfflineAutocompleteHandler;
-                offlinePrompt.Item2.Cancel();
-                if (Thread.CurrentThread != offlinePrompt.Item1)
-                    offlinePrompt.Item1.Join(1000);
-                offlinePrompt = null;
-                ConsoleIO.Reset();
-            }
+            EndOfflinePrompt();
+            ConsoleInputRouter.ShutdownRouter();
             if (Config.Main.Advanced.PlayerHeadAsIcon && OperatingSystem.IsWindows()) { ConsoleIcon.RevertToMCCIcon(); }
             ConsoleIO.Backend?.Shutdown();
             Environment.Exit(exitcode);
@@ -1025,7 +1241,7 @@ namespace MinecraftClient
             if (!string.IsNullOrEmpty(errorMessage))
             {
                 ConsoleIO.Reset();
-                if (ConsoleIO.Backend is not Tui.TuiConsoleBackend)
+                if (!ConsoleInputRouter.IsStarted && ConsoleIO.Backend is not Tui.TuiConsoleBackend)
                 {
                     try
                     {
@@ -1035,13 +1251,19 @@ namespace MinecraftClient
                     catch { }
                 }
                 ConsoleIO.WriteLine(errorMessage);
+            }
 
-                if (disconnectReason.HasValue)
-                {
-                    autoRelogHandled = true;
-                    if (ChatBots.AutoRelog.OnDisconnectStatic(disconnectReason.Value, errorMessage))
-                        return;
-                }
+            if (PrepareExitOnFailure())
+            {
+                Exit(GetFailureExitCode(disconnectReason));
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(errorMessage) && disconnectReason.HasValue)
+            {
+                autoRelogHandled = true;
+                if (ChatBots.AutoRelog.OnDisconnectStatic(disconnectReason.Value, errorMessage, CurrentConnectionAttempt))
+                    return;
             }
 
             if (InternalConfig.InteractiveMode)
@@ -1060,107 +1282,121 @@ namespace MinecraftClient
 
                 if (!autoRelogHandled && disconnectReason.HasValue)
                 {
-                    if (ChatBots.AutoRelog.OnDisconnectStatic(disconnectReason.Value, errorMessage!))
+                    if (ChatBots.AutoRelog.OnDisconnectStatic(disconnectReason.Value, errorMessage!, CurrentConnectionAttempt))
                         return;
                 }
 
-                if (offlinePrompt is null)
-                {
-                    ConsoleIO.Backend?.StopReadThread();
-                    if (ConsoleIO.Backend is not null)
-                        ConsoleIO.Backend.OnInputChange += ConsoleIO.OfflineAutocompleteHandler;
+                BeginOfflinePrompt(CurrentConnectionAttempt);
+            }
+        }
 
-                    var cancellationTokenSource = new CancellationTokenSource();
-                    offlinePrompt = new(new Thread(new ThreadStart(delegate
-                    {
-                        bool exitThread = false;
-                        string command = " ";
-                        ConsoleIO.WriteLine(string.Empty);
-                        ConsoleIO.WriteLineFormatted(string.Format(Translations.mcc_disconnected, Config.Main.Advanced.InternalCmdChar.ToLogString()));
-                        if (ConsoleIO.Backend is Tui.TuiConsoleBackend)
-                            ConsoleIO.WriteLineFormatted(string.Format(Translations.mcc_use_quit_to_exit, Config.Main.Advanced.InternalCmdChar.ToLogString()));
-                        else
-                            ConsoleIO.WriteLineFormatted(Translations.mcc_press_exit, acceptnewlines: true);
+        private static bool BeginOfflinePrompt(long connectionAttempt)
+        {
+            long currentConnectionAttempt = CurrentConnectionAttempt;
+            if (connectionAttempt != currentConnectionAttempt)
+                return false;
 
-                        while (!cancellationTokenSource.IsCancellationRequested)
-                        {
-                            if (exitThread)
-                                return;
+            if (offlinePromptRoute.TryActivate(connectionAttempt, currentConnectionAttempt, () =>
+            {
+                ConsoleInputRouter.RouteOffline(HandleOfflineCommand);
+                ConsoleIO.WriteLine(string.Empty);
+                ConsoleIO.WriteLineFormatted(string.Format(Translations.mcc_disconnected, Config.Main.Advanced.InternalCmdChar.ToLogString()));
+                if (ConsoleIO.Backend is Tui.TuiConsoleBackend)
+                    ConsoleIO.WriteLineFormatted(string.Format(Translations.mcc_use_quit_to_exit, Config.Main.Advanced.InternalCmdChar.ToLogString()));
+                else
+                    ConsoleIO.WriteLineFormatted(Translations.mcc_press_exit, acceptnewlines: true);
+            }))
+            {
+                return true;
+            }
 
-                            command = ConsoleIO.ReadLine().Trim();
+            return offlinePromptRoute.OwnerAttempt == connectionAttempt;
+        }
 
-                            if (command.Length == 0)
-                            {
-                                if (ConsoleIO.Backend is not Tui.TuiConsoleBackend)
-                                    Commands.Exit.DoExit(Config.AppVar.ExpandVars(command));
-                                continue;
-                            }
+        private static void EndOfflinePrompt()
+        {
+            offlinePromptRoute.TryDeactivate(() =>
+            {
+                ConsoleInputRouter.ClearOfflineRoute(HandleOfflineCommand);
+                ConsoleIO.Reset();
+            });
+        }
 
-                            string message = "";
+        internal static void EndOfflinePrompt(long connectionAttempt)
+        {
+            offlinePromptRoute.TryDeactivate(connectionAttempt, () =>
+            {
+                ConsoleInputRouter.ClearOfflineRoute(HandleOfflineCommand);
+                ConsoleIO.Reset();
+            });
+        }
 
-                            if (Config.Main.Advanced.InternalCmdChar.ToChar() != ' '
-                                && command[0] == Config.Main.Advanced.InternalCmdChar.ToChar())
-                                command = command[1..];
+        private static void TransferOfflinePrompt(long sourceConnectionAttempt, long targetConnectionAttempt)
+        {
+            offlinePromptRoute.TryTransfer(sourceConnectionAttempt, targetConnectionAttempt);
+        }
 
-                            if (command.StartsWith("reco"))
-                            {
-                                message = Commands.Reco.DoReconnect(Config.AppVar.ExpandVars(command));
-                                if (message == "")
-                                {
-                                    exitThread = true;
-                                    continue;
-                                }
-                            }
-                            else if (command.StartsWith("connect"))
-                            {
-                                message = Commands.Connect.DoConnect(Config.AppVar.ExpandVars(command));
-                                if (message == "")
-                                {
-                                    exitThread = true;
-                                    continue;
-                                }
-                            }
-                            else if (command.StartsWith("exit") || command.StartsWith("quit"))
-                            {
-                                message = Commands.Exit.DoExit(Config.AppVar.ExpandVars(command));
-                            }
-                            else if (command.StartsWith("help"))
-                            {
-                                ConsoleIO.WriteLineFormatted("§8MCC: " +
-                                                             Config.Main.Advanced.InternalCmdChar.ToLogString() +
-                                                             new Commands.Reco().GetCmdDescTranslated());
-                                ConsoleIO.WriteLineFormatted("§8MCC: " +
-                                                             Config.Main.Advanced.InternalCmdChar.ToLogString() +
-                                                             new Commands.Connect().GetCmdDescTranslated());
-                            }
-                            else
-                                ConsoleIO.WriteLineFormatted(string.Format(Translations.icmd_unknown, command.Split(' ')[0]));
+        private static void HandleOfflineCommand(string input)
+        {
+            string command = input.Trim();
+            if (command.Length == 0)
+            {
+                if (ConsoleIO.Backend is not Tui.TuiConsoleBackend)
+                    Commands.Exit.DoExit(Config.AppVar.ExpandVars(command));
+                return;
+            }
 
-                            if (message != "")
-                                ConsoleIO.WriteLineFormatted("§8MCC: " + message);
-                        }
-                    })), cancellationTokenSource);
-                    offlinePrompt.Item1.Start();
-                }
+            if (Config.Main.Advanced.InternalCmdChar.ToChar() != ' '
+                && command[0] == Config.Main.Advanced.InternalCmdChar.ToChar())
+            {
+                command = command[1..];
+            }
+
+            string message = string.Empty;
+            if (command.StartsWith("reco", StringComparison.Ordinal))
+            {
+                message = Commands.Reco.DoReconnect(Config.AppVar.ExpandVars(command));
+                if (message.Length == 0)
+                    return;
+            }
+            else if (command.StartsWith("connect", StringComparison.Ordinal))
+            {
+                message = Commands.Connect.DoConnect(Config.AppVar.ExpandVars(command));
+                if (message.Length == 0)
+                    return;
+            }
+            else if (command.StartsWith("exit", StringComparison.Ordinal)
+                     || command.StartsWith("quit", StringComparison.Ordinal))
+            {
+                message = Commands.Exit.DoExit(Config.AppVar.ExpandVars(command));
+            }
+            else if (command.StartsWith("help", StringComparison.Ordinal))
+            {
+                ConsoleIO.WriteLineFormatted("§8MCC: " +
+                                             Config.Main.Advanced.InternalCmdChar.ToLogString() +
+                                             new Commands.Reco().GetCmdDescTranslated());
+                ConsoleIO.WriteLineFormatted("§8MCC: " +
+                                             Config.Main.Advanced.InternalCmdChar.ToLogString() +
+                                             new Commands.Connect().GetCmdDescTranslated());
             }
             else
             {
-                // Not in interactive mode, just exit and let the calling script handle the failure.
-                // Exit() dispatches to a background thread and returns, so the specific exit code
-                // has to be chosen up front: falling through to a second Exit() call would race a
-                // Environment.Exit(0) against it and lose the failure code.
-                int exitCode = disconnectReason switch
-                {
-                    ChatBot.DisconnectReason.UserLogout => 1,
-                    ChatBot.DisconnectReason.InGameKick => 2,
-                    ChatBot.DisconnectReason.ConnectionLost => 3,
-                    ChatBot.DisconnectReason.LoginRejected => 4,
-                    _ => 0,
-                };
-
-                Exit(exitCode);
+                ConsoleIO.WriteLineFormatted(string.Format(Translations.icmd_unknown, command.Split(' ')[0]));
             }
 
+            if (message.Length != 0)
+                ConsoleIO.WriteLineFormatted("§8MCC: " + message);
+        }
+
+        private static int GetFailureExitCode(ChatBot.DisconnectReason? disconnectReason)
+        {
+            return disconnectReason switch
+            {
+                ChatBot.DisconnectReason.InGameKick => 2,
+                ChatBot.DisconnectReason.ConnectionLost => 3,
+                ChatBot.DisconnectReason.LoginRejected => 4,
+                _ => 1,
+            };
         }
 
         /// <summary>

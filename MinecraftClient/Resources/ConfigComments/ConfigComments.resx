@@ -292,13 +292,13 @@ You need to enable Inventory Handling to use this bot</value>
     <value>The delay time before joining the server. (in seconds)</value>
   </data>
   <data name="ChatBot.AutoRelog.Ignore_Kick_Message" xml:space="preserve">
-    <value>When set to true, autorelog will reconnect regardless of kick messages.</value>
+    <value>Reconnect after any server kick or login rejection. Network interruptions always trigger Auto Relog.</value>
   </data>
   <data name="ChatBot.AutoRelog.Kick_Messages" xml:space="preserve">
-    <value>If the kickout message matches any of the strings, then autorelog will be triggered.</value>
+    <value>Case-insensitive text fragments that trigger Auto Relog for server kicks and login rejections.</value>
   </data>
   <data name="ChatBot.AutoRelog.Retries" xml:space="preserve">
-    <value>Retries when failing to relog to the server. use -1 for unlimited retries.</value>
+    <value>Exact retry limit. Use 0 to disable retries or -1 for unlimited retries. The count resets after 60 seconds online.</value>
   </data>
   <data name="ChatBot.AutoRespond" xml:space="preserve">
     <value>Run commands or send messages automatically when a specified pattern is detected in chat
@@ -922,6 +922,9 @@ Note: This does NOT require a Bot Token, only an Application ID. Discord must be
   </data>
   <data name="Main.General.AuthlibServer" xml:space="preserve">
     <value>authlib-injector authentication server to use for Yggdrasil accounts</value>
+  </data>
+  <data name="Main.General.AuthServerUrl" xml:space="preserve">
+    <value>Authlib-injector URL to use for Yggdrasil accounts. It must use http or https and include any required path.</value>
   </data>
   <data name="AuthlibServer.Host" xml:space="preserve">
     <value>Domain name or IP address</value>
