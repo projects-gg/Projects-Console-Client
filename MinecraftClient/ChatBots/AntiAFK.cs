@@ -6,7 +6,7 @@ using Tomlet.Attributes;
 namespace MinecraftClient.ChatBots
 {
     /// <summary>
-    /// This bot sends a command every 60 seconds in order to stay non-afk.
+    /// This bot moves (and optionally sends a command) every X seconds in order to stay non-afk.
     /// </summary>
     public class AntiAFK : ChatBot
     {
@@ -23,7 +23,9 @@ namespace MinecraftClient.ChatBots
             public Range Delay = new(60);
 
             [TomlInlineComment("$ChatBot.AntiAfk.Command$")]
-            public string Command = "/ping";
+            // Empty by default: a command the server does not know ("/ping" is not universal)
+            // produces an error reply on every round. Movement alone is enough to stay non-AFK.
+            public string Command = "";
 
             [TomlInlineComment("$ChatBot.AntiAfk.Use_Sneak$")]
             public bool Use_Sneak = false;
@@ -89,7 +91,7 @@ namespace MinecraftClient.ChatBots
         private readonly Random random = new();
 
         /// <summary>
-        /// This bot sends a /ping command every X seconds in order to stay non-afk.
+        /// This bot moves (and optionally sends a command) every X seconds in order to stay non-afk.
         /// </summary>
         public AntiAFK()
         {
