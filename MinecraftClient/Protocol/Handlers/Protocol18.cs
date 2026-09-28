@@ -5666,6 +5666,12 @@ namespace MinecraftClient.Protocol.Handlers
         public bool SendLocationUpdate(Location location, bool onGround, bool horizontalCollision, float? yaw = null, float? pitch = null,
             bool forceUpdate = false)
         {
+            // Movement is a play packet. While the server reconfigures the client (e.g. a proxy
+            // server switch after StartConfiguration) a play packet id is decoded as a configuration
+            // packet and the connection is dropped. Physics keeps running, so the next tick resends.
+            if (currentState != CurrentState.Play)
+                return false;
+
             if (handler.GetTerrainEnabled())
             {
                 bool legacyMovementCadence = protocolVersion < MC_1_9_Version;

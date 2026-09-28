@@ -736,12 +736,20 @@ namespace MinecraftClient.Protocol.Handlers
                         nbtData[""] = rootName;
                 }
                 // In 1.20.2 The root TAG_Compound doesn't have a name
-                // In 1.20.3+ The root can be TAG_Compound or TAG_String
+                // In 1.20.3+ The root can be any tag type. Vanilla mostly sends TAG_Compound or TAG_String,
+                // but registry entries whose codec is a plain value (e.g. 26.3 context providers sent in
+                // full by proxies/ViaVersion) arrive with a primitive root.
                 else
                 {
-                    if (nextId is not (10 or 8)) // TAG_Compound or TAG_String
+                    if (nextId is < 1 or > 12)
                         throw new System.IO.InvalidDataException(
-                            "Failed to decode NBT: Does not start with TAG_Compound or TAG_String");
+                            $"Failed to decode NBT: Unknown root tag type {nextId}");
+
+                    if (nextId is not (10 or 8))
+                        return new Dictionary<string, object>()
+                        {
+                            { "", ReadNbtField(cache, nextId) }
+                        };
 
                     // Read TAG_String
                     if (nextId is 8)
