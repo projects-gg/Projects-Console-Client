@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using MinecraftClient.Mapping;
 using MinecraftClient.Scripting;
 using Tomlet.Attributes;
@@ -86,6 +87,12 @@ namespace MinecraftClient.ChatBots
             }
         }
 
+        // Pathfinding runs on the client tick thread. With the MoveTo default (5 s per attempt) an unreachable
+        // goal, e.g. right after a teleport or respawn, could block the thread for Walk_Retries x 5 s and the
+        // server would drop the connection with "Timed out". Keep each attempt short and cap the whole run.
+        private static readonly TimeSpan PathfindingAttemptTimeout = TimeSpan.FromMilliseconds(500);
+        private static readonly TimeSpan PathfindingBudget = TimeSpan.FromSeconds(2);
+
         private int count, nextrun = Settings.DoubleToTick(5.0);
         private bool previousSneakState = false;
         private readonly Random random = new();
@@ -136,10 +143,11 @@ namespace MinecraftClient.ChatBots
                 var moved = false;
                 var useAlternativeMethod = false;
                 var triesCounter = 0;
+                var budget = Stopwatch.StartNew();
 
                 while (!moved)
                 {
-                    if (triesCounter++ >= Config.Walk_Retries)
+                    if (triesCounter++ >= Config.Walk_Retries || budget.Elapsed >= PathfindingBudget)
                     {
                         useAlternativeMethod = true;
                         break;
@@ -161,7 +169,8 @@ namespace MinecraftClient.ChatBots
                         break;
                     }
 
-                    moved = MoveToLocation(goal, allowUnsafe: false, allowDirectTeleport: false);
+                    moved = MoveToLocation(goal, allowUnsafe: false, allowDirectTeleport: false,
+                        timeout: PathfindingAttemptTimeout);
                 }
 
                 if (!useAlternativeMethod && Config.Use_Sneak)
