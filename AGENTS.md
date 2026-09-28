@@ -57,10 +57,11 @@ Feature columns mean:
 | 1.21.9-1.21.10 | `Protocol18Handler` | Yes | Yes | Yes | Version tools prefer server data reports since 1.21.9 |
 | 1.21.11 | `Protocol18Handler` | Yes | Yes | Yes | Own entity/item/metadata palettes; blocks reuse 1.21.9 palette |
 | 26.1 | `Protocol18Handler` | Yes | Yes | Yes | New Minecraft version naming scheme |
-| 26.2 | `Protocol18Handler` | Yes | Yes | Yes | Latest coded support; own item/block/entity palettes, reuses 26.1 packet IDs and metadata serializers |
+| 26.2 | `Protocol18Handler` | Yes | Yes | Yes | Own item/block/entity palettes, reuses 26.1 packet IDs and metadata serializers |
+| 26.3 | `Protocol18Handler` | Yes | Yes | Yes | Latest coded support; own packet/item/block/entity/metadata palettes, VecDelta entity movement, extended teleport confirm, ClientTickEnd each tick |
 
 Notes:
-- Declared code range is `1.4.6` to `26.2`.
+- Declared code range is `1.4.6` to `26.3`.
 - Human docs are stale in places and sometimes stop at older ranges; prefer code when docs and code disagree.
 - Movement/pathing limits called out in docs still apply: no swimming, no knockback. The `Physics/` engine adds vanilla-accurate collision and movement but some edge cases remain.
 

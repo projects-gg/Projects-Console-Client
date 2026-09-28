@@ -140,5 +140,9 @@ public enum EntityMetaDataType
     /// <summary>
     /// VarInt (1.21.11+, 0=LEFT, 1=RIGHT)
     /// </summary>
-    HumanoidArm
+    HumanoidArm,
+    /// <summary>
+    /// VarInt (26.3+, DyeColor id)
+    /// </summary>
+    DyeColor
 }

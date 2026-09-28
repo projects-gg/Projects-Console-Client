@@ -1,5 +1,5 @@
 {
-  "version": "26.2",
+  "version": "26.3",
   "hostile": [
     "Blaze",
     "Bogged",
@@ -112,6 +112,7 @@
     "CherryChestBoat",
     "ChestMinecart",
     "CommandBlockMinecart",
+    "Cushion",
     "DarkOakBoat",
     "DarkOakChestBoat",
     "DragonFireball",
@@ -150,6 +151,8 @@
     "Painting",
     "PaleOakBoat",
     "PaleOakChestBoat",
+    "PoplarBoat",
+    "PoplarChestBoat",
     "ShulkerBullet",
     "SmallFireball",
     "Snowball",

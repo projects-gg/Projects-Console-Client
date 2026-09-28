@@ -171,5 +171,8 @@ namespace MinecraftClient.Protocol.Handlers
         GameTestHighlightPos,       // Added in 1.21.9
         GameRuleValues,             // Added in 26.1
         LowDiskSpaceWarning,        // Added in 26.1
+        AddTransientBlock,          // Added in 26.3 (Not used)
+        PostEffects,                // Added in 26.3 (Not used)
+        SwingAnimation,             // Added in 26.3
     }
 }

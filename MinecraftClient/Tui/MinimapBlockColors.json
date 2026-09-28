@@ -1,5 +1,5 @@
 {
-  "version": "26.2",
+  "version": "26.3",
   "colors": {
     "AcaciaDoor": [
       216,
@@ -3635,6 +3635,436 @@
       229,
       229,
       51
+    ],
+    "WhiteWoolStairs": [
+      255,
+      255,
+      255
+    ],
+    "WhiteWoolSlab": [
+      255,
+      255,
+      255
+    ],
+    "WhiteConcreteStairs": [
+      255,
+      255,
+      255
+    ],
+    "WhiteConcreteSlab": [
+      255,
+      255,
+      255
+    ],
+    "OrangeWoolStairs": [
+      216,
+      127,
+      51
+    ],
+    "OrangeWoolSlab": [
+      216,
+      127,
+      51
+    ],
+    "OrangeConcreteStairs": [
+      216,
+      127,
+      51
+    ],
+    "OrangeConcreteSlab": [
+      216,
+      127,
+      51
+    ],
+    "MagentaWoolStairs": [
+      178,
+      76,
+      216
+    ],
+    "MagentaWoolSlab": [
+      178,
+      76,
+      216
+    ],
+    "MagentaConcreteStairs": [
+      178,
+      76,
+      216
+    ],
+    "MagentaConcreteSlab": [
+      178,
+      76,
+      216
+    ],
+    "LightBlueWoolStairs": [
+      102,
+      153,
+      216
+    ],
+    "LightBlueWoolSlab": [
+      102,
+      153,
+      216
+    ],
+    "LightBlueConcreteStairs": [
+      102,
+      153,
+      216
+    ],
+    "LightBlueConcreteSlab": [
+      102,
+      153,
+      216
+    ],
+    "YellowWoolStairs": [
+      229,
+      229,
+      51
+    ],
+    "YellowWoolSlab": [
+      229,
+      229,
+      51
+    ],
+    "YellowConcreteStairs": [
+      229,
+      229,
+      51
+    ],
+    "YellowConcreteSlab": [
+      229,
+      229,
+      51
+    ],
+    "LimeWoolStairs": [
+      127,
+      204,
+      25
+    ],
+    "LimeWoolSlab": [
+      127,
+      204,
+      25
+    ],
+    "LimeConcreteStairs": [
+      127,
+      204,
+      25
+    ],
+    "LimeConcreteSlab": [
+      127,
+      204,
+      25
+    ],
+    "PinkWoolStairs": [
+      242,
+      127,
+      165
+    ],
+    "PinkWoolSlab": [
+      242,
+      127,
+      165
+    ],
+    "PinkConcreteStairs": [
+      242,
+      127,
+      165
+    ],
+    "PinkConcreteSlab": [
+      242,
+      127,
+      165
+    ],
+    "GrayWoolStairs": [
+      76,
+      76,
+      76
+    ],
+    "GrayWoolSlab": [
+      76,
+      76,
+      76
+    ],
+    "GrayConcreteStairs": [
+      76,
+      76,
+      76
+    ],
+    "GrayConcreteSlab": [
+      76,
+      76,
+      76
+    ],
+    "LightGrayWoolStairs": [
+      153,
+      153,
+      153
+    ],
+    "LightGrayWoolSlab": [
+      153,
+      153,
+      153
+    ],
+    "LightGrayConcreteStairs": [
+      153,
+      153,
+      153
+    ],
+    "LightGrayConcreteSlab": [
+      153,
+      153,
+      153
+    ],
+    "CyanWoolStairs": [
+      76,
+      127,
+      153
+    ],
+    "CyanWoolSlab": [
+      76,
+      127,
+      153
+    ],
+    "CyanConcreteStairs": [
+      76,
+      127,
+      153
+    ],
+    "CyanConcreteSlab": [
+      76,
+      127,
+      153
+    ],
+    "PurpleWoolStairs": [
+      127,
+      63,
+      178
+    ],
+    "PurpleWoolSlab": [
+      127,
+      63,
+      178
+    ],
+    "PurpleConcreteStairs": [
+      127,
+      63,
+      178
+    ],
+    "PurpleConcreteSlab": [
+      127,
+      63,
+      178
+    ],
+    "BlueWoolStairs": [
+      51,
+      76,
+      178
+    ],
+    "BlueWoolSlab": [
+      51,
+      76,
+      178
+    ],
+    "BlueConcreteStairs": [
+      51,
+      76,
+      178
+    ],
+    "BlueConcreteSlab": [
+      51,
+      76,
+      178
+    ],
+    "BrownWoolStairs": [
+      102,
+      76,
+      51
+    ],
+    "BrownWoolSlab": [
+      102,
+      76,
+      51
+    ],
+    "BrownConcreteStairs": [
+      102,
+      76,
+      51
+    ],
+    "BrownConcreteSlab": [
+      102,
+      76,
+      51
+    ],
+    "GreenWoolStairs": [
+      102,
+      127,
+      51
+    ],
+    "GreenWoolSlab": [
+      102,
+      127,
+      51
+    ],
+    "GreenConcreteStairs": [
+      102,
+      127,
+      51
+    ],
+    "GreenConcreteSlab": [
+      102,
+      127,
+      51
+    ],
+    "RedWoolStairs": [
+      153,
+      51,
+      51
+    ],
+    "RedWoolSlab": [
+      153,
+      51,
+      51
+    ],
+    "RedConcreteStairs": [
+      153,
+      51,
+      51
+    ],
+    "RedConcreteSlab": [
+      153,
+      51,
+      51
+    ],
+    "BlackWoolStairs": [
+      25,
+      25,
+      25
+    ],
+    "BlackWoolSlab": [
+      25,
+      25,
+      25
+    ],
+    "BlackConcreteStairs": [
+      25,
+      25,
+      25
+    ],
+    "BlackConcreteSlab": [
+      25,
+      25,
+      25
+    ],
+    "PoplarPlanks": [
+      153,
+      153,
+      153
+    ],
+    "PoplarSign": [
+      153,
+      153,
+      153
+    ],
+    "PoplarWallSign": [
+      153,
+      153,
+      153
+    ],
+    "PoplarHangingSign": [
+      153,
+      153,
+      153
+    ],
+    "PoplarWallHangingSign": [
+      153,
+      153,
+      153
+    ],
+    "PoplarDoor": [
+      153,
+      153,
+      153
+    ],
+    "PoplarShelf": [
+      153,
+      153,
+      153
+    ],
+    "PoplarFence": [
+      153,
+      153,
+      153
+    ],
+    "PoplarFenceGate": [
+      153,
+      153,
+      153
+    ],
+    "PoplarTrapdoor": [
+      153,
+      153,
+      153
+    ],
+    "PoplarPressurePlate": [
+      153,
+      153,
+      153
+    ],
+    "PoplarButton": [
+      153,
+      153,
+      153
+    ],
+    "PoplarSlab": [
+      153,
+      153,
+      153
+    ],
+    "PoplarStairs": [
+      153,
+      153,
+      153
+    ],
+    "PoplarWood": [
+      129,
+      86,
+      49
+    ],
+    "PoplarSapling": [
+      167,
+      167,
+      167
+    ],
+    "RedPoplarLeaves": [
+      153,
+      51,
+      51
+    ],
+    "OrangePoplarLeaves": [
+      216,
+      127,
+      51
+    ],
+    "YellowPoplarLeaves": [
+      229,
+      229,
+      51
+    ],
+    "RedShrub": [
+      189,
+      48,
+      49
+    ],
+    "StrawBed": [
+      229,
+      229,
+      51
+    ],
+    "ShelfMushroom": [
+      186,
+      133,
+      36
     ]
   },
   "transparent": [

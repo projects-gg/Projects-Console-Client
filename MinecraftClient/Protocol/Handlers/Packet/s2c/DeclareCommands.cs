@@ -52,6 +52,20 @@ namespace MinecraftClient.Protocol.Handlers.packet.s2c
             "dialog", "uuid"
         ];
 
+        private static readonly string[] s_modernArgumentTypes263 =
+        [
+            "brigadier:bool", "brigadier:float", "brigadier:double", "brigadier:integer", "brigadier:long", "brigadier:string",
+            "entity", "game_profile", "block_pos", "column_pos", "vec3", "vec2", "block_state", "block_predicate",
+            "item_stack", "item_predicate", "team_color", "hex_color", "component", "style", "message",
+            "nbt_compound_tag", "nbt_tag", "nbt_path", "objective", "objective_criteria", "operation", "particle",
+            "angle", "rotation", "scoreboard_slot", "score_holder", "swizzle", "team", "item_slot", "item_slots",
+            "resource_location", "function", "entity_anchor", "int_range", "float_range", "dimension", "gamemode",
+            "time", "resource_or_tag", "resource_or_tag_key", "resource", "resource_key", "resource_selector",
+            "template_mirror", "template_rotation", "heightmap", "loot_table", "loot_predicate", "loot_modifier",
+            "context_float_provider", "context_int_provider", "slot_source", "dialog", "feature", "swing_animation",
+            "uuid"
+        ];
+
         private static int RootIdx = -1;
         private static CommandNode[] Nodes = Array.Empty<CommandNode>();
         private static bool HasLoadedTree;
@@ -465,6 +479,7 @@ namespace MinecraftClient.Protocol.Handlers.packet.s2c
         {
             string[] registry = protocolVersion switch
             {
+                >= Protocol18Handler.MC_26_3_Version => s_modernArgumentTypes263,
                 >= Protocol18Handler.MC_1_21_6_Version => s_modernArgumentTypes1216,
                 >= Protocol18Handler.MC_1_21_5_Version => s_modernArgumentTypes1215,
                 _ => s_modernArgumentTypes1206
@@ -654,6 +669,7 @@ namespace MinecraftClient.Protocol.Handlers.packet.s2c
             Add(catalog, "minecraft:item_stack");
             Add(catalog, "minecraft:item_predicate");
             Add(catalog, "minecraft:color");
+            Add(catalog, "minecraft:team_color");
             Add(catalog, "minecraft:hex_color");
             Add(catalog, "minecraft:component");
             Add(catalog, "minecraft:style");
@@ -692,7 +708,12 @@ namespace MinecraftClient.Protocol.Handlers.packet.s2c
             Add(catalog, "minecraft:loot_table");
             Add(catalog, "minecraft:loot_predicate");
             Add(catalog, "minecraft:loot_modifier");
+            Add(catalog, "minecraft:context_float_provider");
+            Add(catalog, "minecraft:context_int_provider");
+            Add(catalog, "minecraft:slot_source");
             Add(catalog, "minecraft:dialog");
+            Add(catalog, "minecraft:feature");
+            Add(catalog, "minecraft:swing_animation");
             Add(catalog, "minecraft:uuid");
             Add(catalog, "forge:enum", ArgumentPayloadKind.ForgeEnum);
 

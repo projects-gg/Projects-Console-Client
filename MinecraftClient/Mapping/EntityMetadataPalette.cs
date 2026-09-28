@@ -28,6 +28,7 @@ public abstract class EntityMetadataPalette
             <= Protocol18Handler.MC_1_21_9_Version => new EntityMetadataPalette1219(),  // 1.21.9 - 1.21.10
             <= Protocol18Handler.MC_1_21_11_Version => new EntityMetadataPalette12111(), // 1.21.11
             <= Protocol18Handler.MC_26_2_Version => new EntityMetadataPalette261(),    // 26.1 - 26.2 (serializers unchanged in 26.2)
+            <= Protocol18Handler.MC_26_3_Version => new EntityMetadataPalette263(),    // 26.3 (+ DYE_COLOR)
             _ => throw new NotImplementedException()
         };
     }

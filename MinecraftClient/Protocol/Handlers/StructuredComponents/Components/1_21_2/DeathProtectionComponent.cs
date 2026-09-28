@@ -39,8 +39,10 @@ public class DeathProtectionComponent(DataTypes dataTypes, ItemPalette itemPalet
                 break;
             case 2: // clear_all_effects
                 break;
-            case 3: // teleport_randomly
+            case 3: // teleport_randomly: float diameter (+ bool directional_particles in 26.3+)
                 payload.AddRange(DataTypes.GetFloat(DataTypes.ReadNextFloat(data)));
+                if (DataTypes.ProtocolVersion >= Protocol18Handler.MC_26_3_Version)
+                    payload.AddRange(DataTypes.GetBool(DataTypes.ReadNextBool(data)));
                 break;
             case 4: // play_sound
                 var sound = (SoundEventSubComponent)SubComponentRegistry.ParseSubComponent(SubComponents.SoundEvent, data);

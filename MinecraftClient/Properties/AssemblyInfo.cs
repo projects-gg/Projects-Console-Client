@@ -35,9 +35,9 @@ using System.Runtime.InteropServices;
 // by using the '*' as shown below:
 // A concrete version is set so the published binary does not report 0.0.0.0, which reads as
 // unfinished/suspicious software to AV heuristics and reputation systems.
-[assembly: AssemblyVersion("26.2.0.0")]
-[assembly: AssemblyFileVersion("26.2.0.0")]
-[assembly: AssemblyInformationalVersion("26.2")]
+[assembly: AssemblyVersion("26.3.0.0")]
+[assembly: AssemblyFileVersion("26.3.0.0")]
+[assembly: AssemblyInformationalVersion("26.3")]
 
 // AppVeyor Build Number
 // MCC will use the following command as CMD pre-build script in AppVeyor msbuild settings:

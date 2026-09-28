@@ -68,6 +68,7 @@ FIELD_TO_ENUM = {
     "RESOLVABLE_PROFILE":    "ResolvableProfile",
     "ZOMBIE_NAUTILUS_VARIANT": "ZombieNautilusVariant",
     "HUMANOID_ARM":          "HumanoidArm",
+    "DYE_COLOR":             "DyeColor",
 }
 
 

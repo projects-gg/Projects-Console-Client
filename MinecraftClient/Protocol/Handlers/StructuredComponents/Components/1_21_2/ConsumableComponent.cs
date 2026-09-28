@@ -48,8 +48,10 @@ public class ConsumableComponent(DataTypes dataTypes, ItemPalette itemPalette, S
                 break;
             case 2: // clear_all_effects: empty
                 break;
-            case 3: // teleport_randomly: float diameter
+            case 3: // teleport_randomly: float diameter (+ bool directional_particles in 26.3+)
                 payload.AddRange(DataTypes.GetFloat(DataTypes.ReadNextFloat(data)));
+                if (DataTypes.ProtocolVersion >= Protocol18Handler.MC_26_3_Version)
+                    payload.AddRange(DataTypes.GetBool(DataTypes.ReadNextBool(data)));
                 break;
             case 4: // play_sound: Holder<SoundEvent>
                 var sound = (SoundEventSubComponent)SubComponentRegistry.ParseSubComponent(SubComponents.SoundEvent, data);

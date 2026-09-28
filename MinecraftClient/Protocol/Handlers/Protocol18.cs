@@ -85,6 +85,7 @@ namespace MinecraftClient.Protocol.Handlers
         internal const int MC_1_21_11_Version = 774;
         internal const int MC_26_1_Version = 775;
         internal const int MC_26_2_Version = 776;
+        internal const int MC_26_3_Version = 777;
 
         private int compression_treshold = -1;
         private int autocomplete_transaction_id = 0;
@@ -101,6 +102,7 @@ namespace MinecraftClient.Protocol.Handlers
         private float lastSentYaw, lastSentPitch;
         private bool lastSentOnGround;
         private bool lastSentHorizontalCollision;
+        private bool positionSentThisTick;
         private int positionReminder;
         private long chunkBatchStartTime;
         private double aggregatedNanosPerChunk = 2000000.0;
@@ -146,21 +148,21 @@ namespace MinecraftClient.Protocol.Handlers
             lastSeenMessagesCollector = protocolVersion >= MC_1_19_3_Version ? new(20) : new(5);
             chunkBatchStartTime = GetNanos();
 
-            if (handler.GetTerrainEnabled() && protocolVersion > MC_26_2_Version)
+            if (handler.GetTerrainEnabled() && protocolVersion > MC_26_3_Version)
             {
                 log.Error($"§c{Translations.extra_terrainandmovement_disabled}");
                 handler.SetTerrainEnabled(false);
             }
 
             if (handler.GetInventoryEnabled() &&
-                protocolVersion is < MC_1_8_Version or > MC_26_2_Version)
+                protocolVersion is < MC_1_8_Version or > MC_26_3_Version)
             {
                 log.Error($"§c{Translations.extra_inventory_disabled}");
                 handler.SetInventoryEnabled(false);
             }
 
             if (handler.GetEntityHandlingEnabled() &&
-                protocolVersion is < MC_1_8_Version or > MC_26_2_Version)
+                protocolVersion is < MC_1_8_Version or > MC_26_3_Version)
             {
                 log.Error($"§c{Translations.extra_entity_disabled}");
                 handler.SetEntityHandlingEnabled(false);
@@ -169,8 +171,9 @@ namespace MinecraftClient.Protocol.Handlers
             Block.Palette = protocolVersion switch
             {
                 // Block palette
-                > MC_26_2_Version when handler.GetTerrainEnabled() =>
+                > MC_26_3_Version when handler.GetTerrainEnabled() =>
                     throw new NotImplementedException(Translations.exception_palette_block),
+                >= MC_26_3_Version => new Palette263(),
                 >= MC_26_2_Version => new Palette262(),
                 >= MC_26_1_Version => new Palette261(),
                 >= MC_1_21_9_Version => new Palette1219(),
@@ -195,8 +198,9 @@ namespace MinecraftClient.Protocol.Handlers
             entityPalette = protocolVersion switch
             {
                 // Entity palette
-                > MC_26_2_Version when handler.GetEntityHandlingEnabled() =>
+                > MC_26_3_Version when handler.GetEntityHandlingEnabled() =>
                     throw new NotImplementedException(Translations.exception_palette_entity),
+                >= MC_26_3_Version => new EntityPalette263(),
                 >= MC_26_2_Version => new EntityPalette262(),
                 >= MC_26_1_Version => new EntityPalette261(),
                 >= MC_1_21_11_Version => new EntityPalette12111(),
@@ -227,8 +231,9 @@ namespace MinecraftClient.Protocol.Handlers
             itemPalette = protocolVersion switch
             {
                 // Item palette
-                > MC_26_2_Version when handler.GetInventoryEnabled() =>
+                > MC_26_3_Version when handler.GetInventoryEnabled() =>
                     throw new NotImplementedException(Translations.exception_palette_item),
+                >= MC_26_3_Version => new ItemPalette263(),
                 >= MC_26_2_Version => new ItemPalette262(),
                 >= MC_26_1_Version => new ItemPalette261(),
                 >= MC_1_21_11_Version => new ItemPalette12111(),
@@ -316,6 +321,7 @@ namespace MinecraftClient.Protocol.Handlers
                     while (elapsedMilliseconds >= nextUpdateDue)
                     {
                         handler.OnUpdate();
+                        SendClientTickEnd();
                         nextUpdateDue += ClientTickIntervalMilliseconds;
                         elapsedMilliseconds = stopWatch.ElapsedMilliseconds;
                     }
@@ -1226,7 +1232,13 @@ namespace MinecraftClient.Protocol.Handlers
                         var filterType = (MessageFilterType)dataTypes.ReadNextVarInt(packetData);
 
                         if (filterType == MessageFilterType.PartiallyFiltered)
-                            dataTypes.ReadNextULongArray(packetData);
+                        {
+                            // 26.3+: BitSet is sent as a byte array instead of a long array
+                            if (protocolVersion >= MC_26_3_Version)
+                                dataTypes.ReadNextByteArray(packetData);
+                            else
+                                dataTypes.ReadNextULongArray(packetData);
+                        }
 
                         // Network Target
                         // net.minecraft.network.message.MessageType.Serialized#write
@@ -1583,7 +1595,10 @@ namespace MinecraftClient.Protocol.Handlers
                                 ? dataTypes.ReadNextVarInt(packetData) : -1;
                         }
 
-                        if (handler.GetTerrainEnabled() || handler.GetEntityHandlingEnabled())
+                        // 26.3+: the teleport confirmation carries the resulting position, so relative values
+                        // must always be resolved to absolute ones (not only when terrain/entity handling is on)
+                        if (handler.GetTerrainEnabled() || handler.GetEntityHandlingEnabled() ||
+                            protocolVersion >= MC_26_3_Version)
                         {
                             if (protocolVersion >= MC_1_8_Version)
                             {
@@ -1594,7 +1609,28 @@ namespace MinecraftClient.Protocol.Handlers
                             }
                         }
 
-                        if (teleportId >= 0)
+                        if (protocolVersion >= MC_26_3_Version)
+                        {
+                            yaw = (locMask & 1 << 3) != 0 ? LastYaw + yaw : yaw;
+                            pitch = (locMask & 1 << 4) != 0 ? LastPitch + pitch : pitch;
+                        }
+
+                        if (teleportId >= 0 && protocolVersion >= MC_26_3_Version)
+                        {
+                            LastYaw = yaw;
+                            LastPitch = pitch;
+                            handler.UpdateLocation(location, yaw, pitch);
+                            SendPacket(PacketTypesOut.TeleportConfirm, dataTypes.ConcatBytes(
+                                DataTypes.GetVarInt(teleportId),
+                                dataTypes.GetDouble(location.X),
+                                dataTypes.GetDouble(location.Y),
+                                dataTypes.GetDouble(location.Z),
+                                dataTypes.GetFloat(yaw),
+                                dataTypes.GetFloat(pitch)));
+                            // The confirmation already acts as the post-teleport move; an extra position
+                            // packet in the same tick would be rejected by the server
+                        }
+                        else if (teleportId >= 0)
                         {
                             LastYaw = yaw;
                             LastPitch = pitch;
@@ -2678,7 +2714,15 @@ namespace MinecraftClient.Protocol.Handlers
 
                     break;
                 case PacketTypesIn.EntityPosition:
-                    if (handler.GetEntityHandlingEnabled())
+                    if (handler.GetEntityHandlingEnabled() && protocolVersion >= MC_26_3_Version)
+                    {
+                        // 26.3+: VarInt properties (bit 0 = onGround, rest = step count) + VecDelta, no trailing bool
+                        var entityId = dataTypes.ReadNextVarInt(packetData);
+                        var properties = dataTypes.ReadNextVarInt(packetData);
+                        var (deltaX, deltaY, deltaZ) = ReadVecDelta(packetData, (int)((uint)properties >> 1));
+                        handler.OnEntityPosition(entityId, deltaX, deltaY, deltaZ, (properties & 1) != 0);
+                    }
+                    else if (handler.GetEntityHandlingEnabled())
                     {
                         var entityId = dataTypes.ReadNextVarInt(packetData);
                         double deltaX, deltaY, deltaZ;
@@ -2706,7 +2750,17 @@ namespace MinecraftClient.Protocol.Handlers
 
                     break;
                 case PacketTypesIn.EntityPositionAndRotation:
-                    if (handler.GetEntityHandlingEnabled())
+                    if (handler.GetEntityHandlingEnabled() && protocolVersion >= MC_26_3_Version)
+                    {
+                        // 26.3+: VarInt properties + VecDelta + yaw/pitch bytes, no trailing bool
+                        var entityId = dataTypes.ReadNextVarInt(packetData);
+                        var properties = dataTypes.ReadNextVarInt(packetData);
+                        var (deltaX, deltaY, deltaZ) = ReadVecDelta(packetData, (int)((uint)properties >> 1));
+                        var yaw = dataTypes.ReadNextByte(packetData) * (1F / 256) * 360;
+                        var pitch = dataTypes.ReadNextByte(packetData) * (1F / 256) * 360;
+                        handler.OnEntityPosition(entityId, deltaX, deltaY, deltaZ, yaw, pitch, (properties & 1) != 0);
+                    }
+                    else if (handler.GetEntityHandlingEnabled())
                     {
                         var entityId = dataTypes.ReadNextVarInt(packetData);
                         double deltaX, deltaY, deltaZ;
@@ -2740,9 +2794,13 @@ namespace MinecraftClient.Protocol.Handlers
                     if (handler.GetEntityHandlingEnabled())
                     {
                         var entityId = dataTypes.ReadNextVarInt(packetData);
+                        // 26.3+: onGround moved in front of yaw/pitch
+                        var onGroundFirst = protocolVersion >= MC_26_3_Version && dataTypes.ReadNextBool(packetData);
                         var yaw = dataTypes.ReadNextByte(packetData) * (1F / 256) * 360;
                         var pitch = dataTypes.ReadNextByte(packetData) * (1F / 256) * 360;
-                        var isOnGround = dataTypes.ReadNextBool(packetData);
+                        var isOnGround = protocolVersion >= MC_26_3_Version
+                            ? onGroundFirst
+                            : dataTypes.ReadNextBool(packetData);
 
                         handler.OnEntityRotation(entityId, yaw, pitch, isOnGround);
                     }
@@ -2835,7 +2893,7 @@ namespace MinecraftClient.Protocol.Handlers
                         // Also make a palette for field? Will be a lot of work
                         var healthField = protocolVersion switch
                         {
-                            > MC_26_2_Version => throw new NotImplementedException(Translations
+                            > MC_26_3_Version => throw new NotImplementedException(Translations
                                 .exception_palette_healthfield),
                             // 1.17 and above
                             >= MC_1_17_Version => 9,
@@ -3000,6 +3058,9 @@ namespace MinecraftClient.Protocol.Handlers
                                 dataTypes.ReadNextFloat(packetData); // Speed
                                 dataTypes.ReadNextVarInt(packetData); // Weight
                             }
+
+                            if (protocolVersion >= MC_26_3_Version)
+                                dataTypes.ReadNextBool(packetData); // Play sound
                         }
                     }
                     else
@@ -3354,7 +3415,25 @@ namespace MinecraftClient.Protocol.Handlers
                     {
                         var playerId = dataTypes.ReadNextVarInt(packetData);
                         var animation = dataTypes.ReadNextByte(packetData);
+
+                        // 26.3+: swings moved to SwingAnimation, remaining ids renumbered. Map back to legacy ids.
+                        if (protocolVersion >= MC_26_3_Version)
+                            animation = animation switch { 0 => 2, 1 => 4, 2 => 5, _ => animation };
+
                         handler.OnEntityAnimation(playerId, animation);
+                    }
+
+                    break;
+                case PacketTypesIn.SwingAnimation:
+                    if (handler.GetEntityHandlingEnabled())
+                    {
+                        var playerId = dataTypes.ReadNextVarInt(packetData);
+                        var hand = dataTypes.ReadNextVarInt(packetData);
+                        dataTypes.ReadNextVarInt(packetData); // Swing type
+                        dataTypes.ReadNextVarInt(packetData); // Duration
+
+                        // Legacy animation ids: 0 = swing main hand, 3 = swing off hand
+                        handler.OnEntityAnimation(playerId, (byte)(hand == 0 ? 0 : 3));
                     }
 
                     break;
@@ -3460,12 +3539,37 @@ namespace MinecraftClient.Protocol.Handlers
                     if (handler.GetEntityHandlingEnabled())
                     {
                         var entityId = dataTypes.ReadNextVarInt(packetData);
-                        var x = dataTypes.ReadNextDouble(packetData);
-                        var y = dataTypes.ReadNextDouble(packetData);
-                        var z = dataTypes.ReadNextDouble(packetData);
-                        dataTypes.ReadNextDouble(packetData); // Delta movement X
-                        dataTypes.ReadNextDouble(packetData); // Delta movement Y
-                        dataTypes.ReadNextDouble(packetData); // Delta movement Z
+                        double x = 0, y = 0, z = 0;
+                        if (protocolVersion >= MC_26_3_Version)
+                        {
+                            // 26.3+: PositionPath (0 = linear end position, 1 = stepped absolute positions)
+                            if (dataTypes.ReadNextVarInt(packetData) == 1)
+                            {
+                                var stepCount = dataTypes.ReadNextVarInt(packetData);
+                                for (var i = 0; i < stepCount; i++)
+                                {
+                                    x = dataTypes.ReadNextDouble(packetData);
+                                    y = dataTypes.ReadNextDouble(packetData);
+                                    z = dataTypes.ReadNextDouble(packetData);
+                                    dataTypes.ReadNextVarInt(packetData); // Tick offset
+                                }
+                            }
+                            else
+                            {
+                                x = dataTypes.ReadNextDouble(packetData);
+                                y = dataTypes.ReadNextDouble(packetData);
+                                z = dataTypes.ReadNextDouble(packetData);
+                            }
+                        }
+                        else
+                        {
+                            x = dataTypes.ReadNextDouble(packetData);
+                            y = dataTypes.ReadNextDouble(packetData);
+                            z = dataTypes.ReadNextDouble(packetData);
+                            dataTypes.ReadNextDouble(packetData); // Delta movement X
+                            dataTypes.ReadNextDouble(packetData); // Delta movement Y
+                            dataTypes.ReadNextDouble(packetData); // Delta movement Z
+                        }
                         var yaw = dataTypes.ReadNextFloat(packetData);
                         var pitch = dataTypes.ReadNextFloat(packetData);
                         var isOnGround = dataTypes.ReadNextBool(packetData);
@@ -3593,6 +3697,51 @@ namespace MinecraftClient.Protocol.Handlers
         /// <summary>
         /// Handle the Advancements packet (1.12+).
         /// </summary>
+        /// <summary>
+        /// 26.3+: end the client tick. The server allows only one position packet per client tick and
+        /// resets that limit when it receives ClientTickEnd, so this is sent after every OnUpdate while playing.
+        /// </summary>
+        private void SendClientTickEnd()
+        {
+            if (protocolVersion < MC_26_3_Version || currentState != CurrentState.Play)
+                return;
+
+            positionSentThisTick = false;
+            try
+            {
+                SendPacket(PacketTypesOut.ClientTickEnd, new List<byte>());
+            }
+            catch (SocketException) { }
+            catch (System.IO.IOException) { }
+        }
+
+        /// <summary>
+        /// Read a 26.3+ VecDelta and return the total movement in blocks.
+        /// Step count 0 is one linear delta; otherwise each step (tick offset + delta) is relative to the previous step.
+        /// </summary>
+        private (double X, double Y, double Z) ReadVecDelta(Queue<byte> packetData, int stepCount)
+        {
+            long x = 0, y = 0, z = 0;
+            if (stepCount <= 0)
+            {
+                x = dataTypes.ReadNextShort(packetData);
+                y = dataTypes.ReadNextShort(packetData);
+                z = dataTypes.ReadNextShort(packetData);
+            }
+            else
+            {
+                for (var i = 0; i < stepCount; i++)
+                {
+                    dataTypes.ReadNextVarInt(packetData); // Tick offset
+                    x += dataTypes.ReadNextShort(packetData);
+                    y += dataTypes.ReadNextShort(packetData);
+                    z += dataTypes.ReadNextShort(packetData);
+                }
+            }
+
+            return (x / 4096.0, y / 4096.0, z / 4096.0);
+        }
+
         private void HandleAdvancements(Queue<byte> packetData)
         {
             bool reset = dataTypes.ReadNextBool(packetData);
@@ -3637,8 +3786,12 @@ namespace MinecraftClient.Protocol.Handlers
                     if ((flags & 0x01) != 0)
                         dataTypes.ReadNextString(packetData); // background texture - read and discard
 
-                    dataTypes.ReadNextFloat(packetData); // x
-                    dataTypes.ReadNextFloat(packetData); // y
+                    // 26.3+: x/y moved out of DisplayInfo to the end of each added entry
+                    if (protocolVersion < MC_26_3_Version)
+                    {
+                        dataTypes.ReadNextFloat(packetData); // x
+                        dataTypes.ReadNextFloat(packetData); // y
+                    }
                 }
 
                 // Criteria and requirements differ by version
@@ -3666,6 +3819,12 @@ namespace MinecraftClient.Protocol.Handlers
                 // sendsTelemetryEvent (added in 1.20, present in all versions since)
                 if (protocolVersion >= MC_1_20_Version)
                     dataTypes.ReadNextBool(packetData);
+
+                if (protocolVersion >= MC_26_3_Version)
+                {
+                    dataTypes.ReadNextFloat(packetData); // x
+                    dataTypes.ReadNextFloat(packetData); // y
+                }
 
                 addedDefinitions[id] = (title, description, type, isHidden, requirements);
             }
@@ -3936,7 +4095,9 @@ namespace MinecraftClient.Protocol.Handlers
                     3 => ReadOnlyWithComponentSlotDisplayLabel(packetData),
                     4 => Item.GetTypeString(itemPalette.FromId(dataTypes.ReadNextVarInt(packetData))),
                     5 => ReadItemStackTemplateLabel(packetData),
-                    6 => "#" + dataTypes.ReadNextString(packetData),
+                    6 => protocolVersion >= MC_26_3_Version
+                        ? ReadItemHolderSetLabel(packetData)
+                        : "#" + dataTypes.ReadNextString(packetData),
                     7 => ReadDyedSlotDisplayLabel(packetData),
                     8 => ReadSmithingTrimSlotDisplayLabel(packetData),
                     9 => ReadWithRemainderSlotDisplayLabel(packetData),
@@ -3957,6 +4118,26 @@ namespace MinecraftClient.Protocol.Handlers
                 7 => ReadCompositeSlotDisplayLabel(packetData),
                 _ => $"slot_display_{slotDisplayType}",
             };
+        }
+
+        /// <summary>
+        /// Reads a HolderSet&lt;Item&gt; (26.3+ tag slot display): VarInt 0 = named tag followed by its id,
+        /// otherwise VarInt (count + 1) followed by that many item registry ids.
+        /// </summary>
+        private string ReadItemHolderSetLabel(Queue<byte> packetData)
+        {
+            int count = dataTypes.ReadNextVarInt(packetData) - 1;
+            if (count == -1)
+                return "#" + dataTypes.ReadNextString(packetData);
+
+            string? first = null;
+            for (int i = 0; i < count; i++)
+            {
+                string label = Item.GetTypeString(itemPalette.FromId(dataTypes.ReadNextVarInt(packetData)));
+                first ??= label;
+            }
+
+            return first ?? "Empty";
         }
 
         /// <summary>
@@ -5567,6 +5748,11 @@ namespace MinecraftClient.Protocol.Handlers
                     else
                     {
                         positionChanged = distSqr > 4.0E-8 || positionReminder >= positionReminderInterval;
+
+                        // 26.3+: the server kicks on a second position packet before ClientTickEnd; defer it
+                        if (protocolVersion >= MC_26_3_Version && positionSentThisTick)
+                            positionChanged = false;
+
                         bool movementStateChanged = onGround != lastSentOnGround
                             || (supportsHorizontalCollision && horizontalCollision != lastSentHorizontalCollision);
 
@@ -5634,6 +5820,9 @@ namespace MinecraftClient.Protocol.Handlers
                     }
                     lastSentOnGround = onGround;
                     lastSentHorizontalCollision = horizontalCollision;
+
+                    if (packetType is PacketTypesOut.PlayerPosition or PacketTypesOut.PlayerPositionAndRotation)
+                        positionSentThisTick = true;
 
                     SendPacket(packetType, payload);
                     return true;
@@ -5890,6 +6079,10 @@ namespace MinecraftClient.Protocol.Handlers
         {
             try
             {
+                // 26.3+: CHANGE_DESTROY_DIRECTION was inserted at 1, shifting every later action by one
+                if (protocolVersion >= MC_26_3_Version && status >= 1)
+                    status++;
+
                 List<byte> packet = new();
                 packet.AddRange(DataTypes.GetVarInt(status));
                 packet.AddRange(dataTypes.GetLocation(location));
@@ -6414,6 +6607,14 @@ namespace MinecraftClient.Protocol.Handlers
             {
                 if (animation is not (0 or 1)) return false;
 
+                // 26.3+: Swing was replaced by an empty Punch packet (main hand only, server-side animation)
+                if (protocolVersion >= MC_26_3_Version)
+                {
+                    if (animation == 0)
+                        SendPacket(PacketTypesOut.Animation, new List<byte>());
+                    return true;
+                }
+
                 List<byte> packet = new();
 
                 switch (protocolVersion)
@@ -6494,12 +6695,15 @@ namespace MinecraftClient.Protocol.Handlers
 
                 List<byte> packet = new();
                 packet.AddRange(dataTypes.GetLocation(sign));
-                if (protocolVersion >= MC_1_20_Version)
+                if (protocolVersion is >= MC_1_20_Version and < MC_26_3_Version)
                     packet.AddRange(dataTypes.GetBool(isFrontText));
                 packet.AddRange(dataTypes.GetString(line1));
                 packet.AddRange(dataTypes.GetString(line2));
                 packet.AddRange(dataTypes.GetString(line3));
                 packet.AddRange(dataTypes.GetString(line4));
+                // 26.3+: side moved after the lines as a SignTextSlot VarInt (0 = back, 1 = front)
+                if (protocolVersion >= MC_26_3_Version)
+                    packet.AddRange(DataTypes.GetVarInt(isFrontText ? 1 : 0));
                 SendPacket(PacketTypesOut.UpdateSign, packet);
                 return true;
             }
