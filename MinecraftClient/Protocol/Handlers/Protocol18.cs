@@ -3695,9 +3695,6 @@ namespace MinecraftClient.Protocol.Handlers
         }
 
         /// <summary>
-        /// Handle the Advancements packet (1.12+).
-        /// </summary>
-        /// <summary>
         /// 26.3+: end the client tick. The server allows only one position packet per client tick and
         /// resets that limit when it receives ClientTickEnd, so this is sent after every OnUpdate while playing.
         /// </summary>
@@ -3742,6 +3739,9 @@ namespace MinecraftClient.Protocol.Handlers
             return (x / 4096.0, y / 4096.0, z / 4096.0);
         }
 
+        /// <summary>
+        /// Handle the Advancements packet (1.12+).
+        /// </summary>
         private void HandleAdvancements(Queue<byte> packetData)
         {
             bool reset = dataTypes.ReadNextBool(packetData);
