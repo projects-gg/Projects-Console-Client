@@ -8,6 +8,8 @@
 #   the same build, then a GitHub release with the zips, SHA256SUMS and afk-release.json.
 #   afk-release.json is the content index `afk` entry (see docs/content-format.md in the launcher
 #   repo). Players only get a build after Projects Studio publishes it to the content index.
+#   It also carries `minecraftVersions`, the AFK account version picker list, generated from MCC's
+#   own protocol table by .github/scripts/minecraft_versions.py.
 name: AFK client
 
 on:
@@ -124,10 +126,29 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  # The versions MCC can join, grouped by protocol, newest first: [{value, label}]. The script fails
+  # when ProtocolHandler.cs does not parse as expected, so the list is never empty or partial.
+  versions:
+    name: Minecraft versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      json: ${{ steps.extract.outputs.json }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Extract the joinable Minecraft versions
+        id: extract
+        run: |
+          python3 -I .github/scripts/minecraft_versions.py MinecraftClient minecraft-versions.json
+          echo "json=$(jq -c . minecraft-versions.json)" >> "$GITHUB_OUTPUT"
+
   # Runs for branch pushes too: that is the dry run of the release files.
   manifest:
     name: Checksums and afk-release.json
-    needs: build
+    needs: [build, versions]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -194,7 +215,15 @@ jobs:
           PY
 
       - name: Checksums and afk-release.json
+        env:
+          MINECRAFT_VERSIONS: ${{ needs.versions.outputs.json }}
         run: |
+          if ! printf '%s' "$MINECRAFT_VERSIONS" | jq -e 'type == "array" and length > 0
+              and all(.[]; keys == ["label", "value"] and (.value | test("^[0-9]+(\\.[0-9]+)+$"))
+                and (.label | type == "string"))' > /dev/null; then
+            echo "::error::minecraftVersions from the versions job is missing or malformed."
+            exit 1
+          fi
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             version="$GITHUB_REF_NAME"
           else
@@ -214,7 +243,8 @@ jobs:
             jq -n --arg key "$key" --arg v "$version" --arg url "$base/$zip" \
               --arg sha "$(sha256sum -- "$zip" | cut -d' ' -f1)" --argjson size "$(stat -c %s -- "$zip")" \
               '{($key): {path: "afk/\($v)/\($key).zip", urls: [$url], sha256: $sha, size: $size}}'
-          done | jq -S -s --arg v "$version" '{version: $v, builds: add}' > afk-release.json
+          done | jq -S -s --arg v "$version" --argjson versions "$MINECRAFT_VERSIONS" \
+            '{version: $v, builds: add, minecraftVersions: $versions}' > afk-release.json
           cat afk-release.json SHA256SUMS
           {
             echo "### afk-release.json ($version)"
