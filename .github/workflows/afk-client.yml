@@ -14,7 +14,9 @@ name: AFK client
 
 on:
   push:
-    branches: [projects-ci]
+    # fix/auto-respond-regex: dry run of that branch only (no tag, no release). Leave this line out
+    # when the fix moves to projects-ci.
+    branches: [projects-ci, fix/auto-respond-regex]
     tags: ["[0-9]+.[0-9]+.[0-9]+*"]
 
 permissions:
