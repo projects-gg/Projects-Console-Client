@@ -364,6 +364,18 @@ cooldown: {6}</value>
     <value>Bu eşleşme asla tetiklenmeyecek:
 {0}</value>
   </data>
+  <data name="bot.autoRespond.regex_invalid" xml:space="preserve">
+    <value>Kural atlandı, düzenli ifadesi geçersiz: {0}</value>
+  </data>
+  <data name="bot.autoRespond.regex_non_backtracking" xml:space="preserve">
+    <value>Kural bir sohbet satırında çok uzun sürdü, artık geri izlemesiz düzenli ifade motoruyla çalışıyor: {0}</value>
+  </data>
+  <data name="bot.autoRespond.regex_timeout" xml:space="preserve">
+    <value>Kural bir sohbet satırında çok uzun sürdü, o satır bu kural için atlandı: {0}</value>
+  </data>
+  <data name="bot.autoRespond.regex_turned_off" xml:space="preserve">
+    <value>Kural sürekli çok uzun sürdüğü için sonraki bağlantıya kadar kapatıldı: {0}</value>
+  </data>
   <data name="bot.chatLog.invalid_file" xml:space="preserve">
     <value>'{0}' yolu geçersiz karakterler içeriyor.</value>
   </data>

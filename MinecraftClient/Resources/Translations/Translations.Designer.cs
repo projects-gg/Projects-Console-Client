@@ -790,6 +790,42 @@ namespace MinecraftClient {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Rule skipped, its regex is not valid: {0}.
+        /// </summary>
+        internal static string bot_autoRespond_regex_invalid {
+            get {
+                return ResourceManager.GetString("bot.autoRespond.regex_invalid", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to This rule took too long on a chat line and now runs on the non-backtracking regex engine: {0}.
+        /// </summary>
+        internal static string bot_autoRespond_regex_non_backtracking {
+            get {
+                return ResourceManager.GetString("bot.autoRespond.regex_non_backtracking", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to This rule took too long on a chat line, so the line was skipped for it: {0}.
+        /// </summary>
+        internal static string bot_autoRespond_regex_timeout {
+            get {
+                return ResourceManager.GetString("bot.autoRespond.regex_timeout", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to This rule kept taking too long and is turned off until the next connection: {0}.
+        /// </summary>
+        internal static string bot_autoRespond_regex_turned_off {
+            get {
+                return ResourceManager.GetString("bot.autoRespond.regex_turned_off", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Path &apos;{0}&apos; contains invalid characters..
         /// </summary>
         internal static string bot_chatLog_invalid_file {

@@ -364,6 +364,18 @@ cooldown: {6}</value>
     <value>This match will never trigger:
 {0}</value>
   </data>
+  <data name="bot.autoRespond.regex_invalid" xml:space="preserve">
+    <value>Rule skipped, its regex is not valid: {0}</value>
+  </data>
+  <data name="bot.autoRespond.regex_non_backtracking" xml:space="preserve">
+    <value>This rule took too long on a chat line and now runs on the non-backtracking regex engine: {0}</value>
+  </data>
+  <data name="bot.autoRespond.regex_timeout" xml:space="preserve">
+    <value>This rule took too long on a chat line, so the line was skipped for it: {0}</value>
+  </data>
+  <data name="bot.autoRespond.regex_turned_off" xml:space="preserve">
+    <value>This rule kept taking too long and is turned off until the next connection: {0}</value>
+  </data>
   <data name="bot.chatLog.invalid_file" xml:space="preserve">
     <value>Path '{0}' contains invalid characters.</value>
   </data>
