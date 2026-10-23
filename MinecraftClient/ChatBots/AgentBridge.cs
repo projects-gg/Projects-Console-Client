@@ -266,7 +266,7 @@ namespace MinecraftClient.ChatBots
 
         private void ExecuteOperations()
         {
-            for (int i = 0; i < MaxOperationsPerTick && channel.TryTakeOperation(out AgentOperation operation); i++)
+            for (int i = 0; i < MaxOperationsPerTick && channel.TryTakeOperation(out AgentOperation? operation); i++)
             {
                 string? error = Execute(operation);
                 if (error is null)

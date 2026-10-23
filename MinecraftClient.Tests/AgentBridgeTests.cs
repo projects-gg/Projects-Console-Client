@@ -299,7 +299,7 @@ public sealed class AgentBridgeChannelTests
     {
         for (int i = 0; i < 500; i++)
         {
-            if (channel.TryTakeOperation(out AgentOperation operation))
+            if (channel.TryTakeOperation(out AgentOperation? operation))
                 return operation;
             await Task.Delay(10);
         }
@@ -371,5 +371,47 @@ public sealed class AgentBridgeChannelTests
 
         using StreamReader reader = new(server);
         Assert.Equal("ok", await reader.ReadLineAsync());
+    }
+}
+
+public sealed class AgentBridgeKindTests
+{
+    [Fact]
+    public void SystemPlayerAndActionBarLinesAreToldApart()
+    {
+        ChatMessage system = new("x", null, false, -1, Guid.Empty, true);
+        ChatMessage overlay = new("x", null, false, -1, Guid.Empty, true) { isOverlay = true };
+        ChatMessage profileless = new("x", "Karsi", false, 1, Guid.Empty, true) { isProfileless = true };
+        ChatMessage signed = new("x", false, 0, Guid.NewGuid(), null, "Karsi", null, 0, null, true);
+
+        Assert.Equal("system", AgentBridge.ChatType(system));
+        Assert.Equal("actionbar", AgentBridge.ChatType(overlay));
+        Assert.Equal("player", AgentBridge.ChatType(profileless));
+        Assert.Equal("player", AgentBridge.ChatType(signed));
+    }
+
+    [Theory]
+    [InlineData(0, "player")]
+    [InlineData(1, "system")]
+    [InlineData(2, "actionbar")]
+    public void LegacyChatPositionsMapToKinds(int position, string kind)
+    {
+        Assert.Equal(kind, AgentBridge.ChatType(new ChatMessage("x", null, true, position, Guid.Empty)));
+    }
+
+    [Fact]
+    public void WindowTypesUseTheGameNames()
+    {
+        Assert.Equal("generic_9x6", AgentBridge.WindowTypeName(ContainerType.Generic_9x6));
+        Assert.Equal("anvil", AgentBridge.WindowTypeName(ContainerType.Anvil));
+        Assert.Equal("unknown", AgentBridge.WindowTypeName(ContainerType.Unknown));
+    }
+
+    [Fact]
+    public void AtMostTenOperationsPassInABurst()
+    {
+        AgentBridge.OperationBudget budget = new(10);
+        int passed = Enumerable.Range(0, 25).Count(_ => budget.TryTake());
+        Assert.InRange(passed, 10, 11); // a token may refill while the loop runs
     }
 }
