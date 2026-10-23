@@ -54,7 +54,9 @@ namespace MinecraftClient.ChatBots
             JsonDocument document;
             try
             {
-                document = JsonDocument.Parse(line.ToArray(), new JsonDocumentOptions { MaxDepth = 4 });
+                // A duplicated field would make an operation mean two things: refuse it.
+                document = JsonDocument.Parse(line.ToArray(),
+                    new JsonDocumentOptions { MaxDepth = 4, AllowDuplicateProperties = false });
             }
             catch (JsonException)
             {

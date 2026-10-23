@@ -62,9 +62,10 @@ namespace MinecraftClient.Protocol.Message
             {
                 CollectJson(JsonNode.Parse(trimmed), clicks, 0);
             }
-            catch (JsonException)
+            catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException)
             {
-                // Not JSON after all: a plain text line has no clicks.
+                // Not JSON after all (a plain text line has no clicks), or JSON a game would not read either
+                // (duplicate keys throw only when the object is first read): no clicks, never a crash.
             }
         }
 

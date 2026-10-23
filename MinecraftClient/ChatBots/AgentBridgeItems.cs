@@ -28,8 +28,9 @@ namespace MinecraftClient.ChatBots
         private const int MaxNbtNodes = 2000;
         private const int MaxNbtDepth = 16;
 
-        // PascalCase enum names back to registry names: "DiscFragment5" -> "disc_fragment_5".
-        [GeneratedRegex("(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])")]
+        // PascalCase enum names back to registry names: "DiscFragment5" -> "disc_fragment_5",
+        // "CarrotOnAStick" -> "carrot_on_a_stick", "JackOLantern" -> "jack_o_lantern".
+        [GeneratedRegex("(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|(?<=[A-Za-z])(?=[0-9])")]
         private static partial Regex WordBoundary();
 
         /// <summary>"minecraft:elytra" for <see cref="ItemType.Elytra"/>.</summary>

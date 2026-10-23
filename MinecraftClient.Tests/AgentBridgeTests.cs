@@ -84,6 +84,16 @@ public sealed class AgentBridgeClickTests
     }
 
     [Fact]
+    public void DuplicateJsonKeysNeverThrow()
+    {
+        // System.Text.Json reports duplicate keys only when the object is first read.
+        List<ChatClick> clicks = new();
+        ChatClicks.CollectJson("""{"text":"a","clickEvent":{"action":"run_command","value":"/x"},"clickEvent":{}}""", clicks);
+        ChatClicks.CollectJson("""[{"text":"a","text":"b"}]""", clicks);
+        Assert.True(clicks.Count <= 1);
+    }
+
+    [Fact]
     public void ClicksAreCappedAndLongValuesCut()
     {
         object[] children = Enumerable.Range(0, 40)
@@ -138,6 +148,8 @@ public sealed class AgentOperationTests
     [InlineData("""{"op":"hold","slot":9}""", "bad_request")]
     [InlineData("""{"op":"snapshot","what":"world"}""", "bad_request")]
     [InlineData("""{"op":"close","id":"bad id!","win":1,"ws":1}""", "bad_id")]
+    [InlineData("""{"op":"rename","win":4,"ws":5,"text":"37500","text":"Elytra"}""", "bad_request")]
+    [InlineData("""{"op":"hold","slot":1,"op":"click"}""", "bad_request")]
     [InlineData("""[1,2]""", "bad_request")]
     [InlineData("""not json""", "bad_request")]
     public void MalformedOperationsAreRefused(string json, string reason)
@@ -173,6 +185,9 @@ public sealed class AgentBridgeItemTests
     [InlineData(ItemType.MusicDisc11, "minecraft:music_disc_11")]
     [InlineData(ItemType.NetheriteUpgradeSmithingTemplate, "minecraft:netherite_upgrade_smithing_template")]
     [InlineData(ItemType.Spawner, "minecraft:spawner")]
+    [InlineData(ItemType.CarrotOnAStick, "minecraft:carrot_on_a_stick")]
+    [InlineData(ItemType.JackOLantern, "minecraft:jack_o_lantern")]
+    [InlineData(ItemType.WarpedFungusOnAStick, "minecraft:warped_fungus_on_a_stick")]
     public void RegistryNamesFollowTheGame(ItemType type, string expected)
     {
         Assert.Equal(expected, AgentBridgeItems.RegistryName(type));
