@@ -241,25 +241,58 @@ fails (`left`); no partial window is reported.
 
 ## TradeSystem, step by step
 
-What the trial did on the SMP's TradeSystem 2.6.3 (Canvas 26.3, see the AFK+ trial note). Slots are those
-of the SMP's `Layouts.yml` for the bot's own view: own money icon 3, partner money icon 5, own status 12,
-partner status 14, own trade slots 9, 10, 18, 19, 27–29, …, partner slots 16, 17, 25, 26, ….
+What the trial (23 Oct 2026) saw with TradeSystem 2.6.3 Hotfix-9 on a local Canvas 26.3 server, with a
+54-slot layout. Slots of the bot's own view: own money icon 3, partner money icon 5, own status 12, partner
+status 14, cancel 22, own trade slots 9, 10, 18, 19, 27–29, 36–39, 45–48, partner trade slots 16, 17, 25, 26,
+33–35, 41–44, 50–53; the rest is glass. Clients: 26.3, and 26.1 and 26.2 through ViaBackwards (window, anvil and
+amount the same).
+
+Every icon click replaces windows, and ids change: one purchase went trade window 1 → anvil 2 → trade window 3,
+and the countdown re-opened window 3 three times. Take `win` and `ws` from the latest `win_open` every time.
 
 Purchase (the bot pays):
 
-1. stdin `/takas Karsi`; the partner accepts; `win_open` (`generic_9x6`, size 54) and `win_items`.
-2. `click` slot 3 (`pickup`, button 0): the money icon. TradeSystem opens an anvil: `win_close` (`replaced`),
-   `win_open` (`anvil`, size 3), `win_items`.
-3. `rename` `"37500"` on the anvil: `win_slot` slot 2 shows the named item.
-4. `click` slot 2: TradeSystem takes the amount and re-opens the trade window: `win_open`, `win_items`; the
-   own money icon (slot 3) now shows the amount.
-5. Check the partner slots (`win_slot` events) against the deal, then `click` slot 12 (ready).
-6. The partner's change of offer drops both ready states (`Revoke_Ready_State_on_Offer_Change`); the countdown
-   re-opens the window with new titles; `chat` "Takas> Takas tamamlandı." and the report lines; `win_close`.
-7. The proof is the window history, the inventory difference and the `/bal` difference, not the chat line.
+1. stdin `/takas <partner>`; the partner accepts; `win_open` (`generic_9x6`, size 54) and `win_items`: `"$: 0"`
+   on 3 and 5, `"Durum: Hazır değil"` on 12 and 14.
+2. The partner's items arrive as `win_slot` events in partner slots.
+3. `click` slot 3 (`pickup`, button 0): `win_close {by: "server"}`, `win_open` (`anvil`, size 3), `win_items`
+   (slot 0: a paper named `"0"`).
+4. `rename` `"37500"`: `win_slot` 0 and 2, a paper named `"37500"`.
+5. `click` slot 2: `win_close {by: "replaced"}`, `win_open` (the trade window, new id), `win_items`; slot 3 now
+   reads `"$: 37K"` (see below).
+6. Check the partner slots against the deal, then `click` slot 12: slot 12 turns `"Durum: Hazır"`. When the partner
+   is ready too (slot 14), the countdown re-opens the window with ` - 3s`, ` - 2s`, ` - 1s` titles (a new `ws`
+   each), then `win_close {by: "server"}` and `chat` `"Takas> Takas tamamlandı."`, `"  + 1x Elytra"`,
+   `"  - 37K $"`.
+7. The proof is the `/bal` difference (in the trial 100,000 → 62,500) and the `inv` difference, not the chat.
 
-Sale (the bot gives items): `click` the item in the inventory section (`pickup`), then `click` an own trade
-slot; the cursor shows in `inv` between the two clicks. The partner's money shows in slot 5.
+- An amount above the balance: after step 5 `chat` `"Takas> Bakiye yetersiz! En fazla 3M $ verebilirsiniz."`
+  and the anvil stays open; close it.
+- A change of the partner's offer drops the bot's ready (slot 12 back to `"Durum: Hazır değil"`).
+
+Sale (the bot gives items): `click` the item in the inventory section (`pickup`; `inv.cursor` shows it), then
+`click` an own trade slot. The partner types its amount in its own anvil; the bot sees it only on slot 5.
+
+### Amounts are shown rounded down
+
+TradeSystem shows amounts from 1,000 in whole thousands and from 1,000,000 in whole millions, rounded down:
+999 → `"$: 999"`, 1,600 → `"$: 1K"`, 37,999 → `"$: 37K"`, 1,500,000 → `"$: 1M"`. Its finish report and its own
+log use the same form. So:
+
+- the bot's own amount is exact because the bot types it (the host lets only the deal amount through `rename`);
+  the icon only confirms the range;
+- the partner's amount can be read only to its unit: 7,000 and 7,200 give the same item, name and `fp`. When the
+  bot sells, the deal price must be one the icon can prove: below 1,000 any amount, from 1,000 whole thousands, from
+  1,000,000 whole millions, and slot 5 must show exactly that number (`"$: 7K"` for 7,000). Rounded down, that
+  means the partner pays at least the price. The `/bal` difference after the trade stays the exact proof.
+
+### Completion depends on the server's thread checks
+
+TradeSystem 2.6.3 Hotfix-9 closes both inventories at the end of the countdown from Folia's global region. On
+Canvas with `guard-severity: THROW` that throws inside TradeSystem's task: the countdown ends and nothing else
+happens, the trade stays open and nothing moves (cancelling still works). With `LOG` the same moment logs
+"Cannot close container async" four times and the trade completes. A host treats "countdown over, no finish
+line, window still open" as a stuck trade: wait at most a few seconds, cancel, check `/bal` and `inv`.
 
 ## Stdout bridge hardening (`@@MCC@@`)
 
