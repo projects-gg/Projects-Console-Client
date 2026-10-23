@@ -3285,156 +3285,10 @@ namespace MinecraftClient.Protocol.Handlers
                         numberFormat2);
                     break;
                 case PacketTypesIn.Teams:
-                    // Wire format per version:
-                    //   All versions: name (string), method (byte)
-                    //   1.7.x method 0/2:
-                    //                 displayName (string), prefix (string), suffix (string),
-                    //                 friendlyFire (byte)
-                    //   1.8/1.8.9 method 0/2:
-                    //                 displayName (string), prefix (string), suffix (string),
-                    //                 options (byte), nameTagVisibility, color (byte)
-                    //   1.9-1.12.2 method 0/2:
-                    //                 displayName (string), prefix (string), suffix (string),
-                    //                 options (byte), nameTagVisibility, collisionRule,
-                    //                 color (byte)
-                    //   1.13-1.21.4 method 0/2:
-                    //                 displayName (component), options (byte),
-                    //                 nameTagVisibility, collisionRule, color (VarInt),
-                    //                 prefix (component), suffix (component)
-                    //   1.21.5-26.1 method 0/2:
-                    //                 displayName (component), options (byte),
-                    //                 nameTagVisibility (VarInt), collisionRule (VarInt),
-                    //                 color (VarInt), prefix (component), suffix (component)
-                    //   26.2+ method 0/2:
-                    //                 displayName (component), prefix (component),
-                    //                 suffix (component), nameTagVisibility (VarInt),
-                    //                 collisionRule (VarInt), color (Optional<VarInt>),
-                    //                 options (byte)
-                    //   1.7.x method 0/3/4: players list (Short count + strings)
-                    //   1.8+ method 0/3/4: players list (VarInt count + strings)
-                    var teamName = dataTypes.ReadNextString(packetData);
-                    var teamMethod = dataTypes.ReadNextByte(packetData);
-
-                    var teamDisplayName = string.Empty;
-                    byte teamFriendlyFlags = 0;
-                    var teamNameTagVisibility = string.Empty;
-                    var teamCollisionRule = string.Empty;
-                    var teamColor = -1;
-                    var teamPrefix = string.Empty;
-                    var teamSuffix = string.Empty;
-
-                    if (teamMethod is 0 or 2)
-                    {
-                        if (protocolVersion < MC_1_13_Version)
-                        {
-                            teamDisplayName = dataTypes.ReadNextString(packetData);
-                            teamPrefix = dataTypes.ReadNextString(packetData);
-                            teamSuffix = dataTypes.ReadNextString(packetData);
-                            teamFriendlyFlags = dataTypes.ReadNextByte(packetData);
-
-                            if (protocolVersion >= MC_1_8_Version)
-                            {
-                                teamNameTagVisibility = dataTypes.ReadNextString(packetData);
-
-                                if (protocolVersion >= MC_1_9_Version)
-                                    teamCollisionRule = dataTypes.ReadNextString(packetData);
-
-                                teamColor = unchecked((sbyte)dataTypes.ReadNextByte(packetData));
-                            }
-                        }
-                        else if (protocolVersion >= MC_26_2_Version)
-                        {
-                            teamDisplayName = dataTypes.ReadNextChat(packetData);
-                            teamPrefix = dataTypes.ReadNextChat(packetData);
-                            teamSuffix = dataTypes.ReadNextChat(packetData);
-
-                            // STREAM_CODEC: 0=always, 1=never, 2=hideForOtherTeams, 3=hideForOwnTeam
-                            teamNameTagVisibility = dataTypes.ReadNextVarInt(packetData) switch
-                            {
-                                0 => "always",
-                                1 => "never",
-                                2 => "hideForOtherTeams",
-                                3 => "hideForOwnTeam",
-                                _ => "always"
-                            };
-
-                            // STREAM_CODEC: 0=always, 1=never, 2=pushOtherTeams, 3=pushOwnTeam
-                            teamCollisionRule = dataTypes.ReadNextVarInt(packetData) switch
-                            {
-                                0 => "always",
-                                1 => "never",
-                                2 => "pushOtherTeams",
-                                3 => "pushOwnTeam",
-                                _ => "always"
-                            };
-
-                            // Optional<TeamColor>: bool + VarInt id (ids match legacy color ordinals 0-15)
-                            teamColor = dataTypes.ReadNextBool(packetData)
-                                ? dataTypes.ReadNextVarInt(packetData)
-                                : -1;
-
-                            teamFriendlyFlags = dataTypes.ReadNextByte(packetData);
-                        }
-                        else
-                        {
-                            teamDisplayName = dataTypes.ReadNextChat(packetData);
-                            teamFriendlyFlags = dataTypes.ReadNextByte(packetData);
-
-                            // nameTagVisibility
-                            if (protocolVersion >= MC_1_21_5_Version)
-                            {
-                                // STREAM_CODEC: 0=always, 1=never, 2=hideForOtherTeams, 3=hideForOwnTeam
-                                teamNameTagVisibility = dataTypes.ReadNextVarInt(packetData) switch
-                                {
-                                    0 => "always",
-                                    1 => "never",
-                                    2 => "hideForOtherTeams",
-                                    3 => "hideForOwnTeam",
-                                    _ => "always"
-                                };
-                            }
-                            else
-                            {
-                                teamNameTagVisibility = dataTypes.ReadNextString(packetData);
-                            }
-
-                            // collisionRule
-                            if (protocolVersion >= MC_1_21_5_Version)
-                            {
-                                // STREAM_CODEC: 0=always, 1=never, 2=pushOtherTeams, 3=pushOwnTeam
-                                teamCollisionRule = dataTypes.ReadNextVarInt(packetData) switch
-                                {
-                                    0 => "always",
-                                    1 => "never",
-                                    2 => "pushOtherTeams",
-                                    3 => "pushOwnTeam",
-                                    _ => "always"
-                                };
-                            }
-                            else
-                            {
-                                teamCollisionRule = dataTypes.ReadNextString(packetData);
-                            }
-
-                            teamColor = dataTypes.ReadNextVarInt(packetData);
-                            teamPrefix = dataTypes.ReadNextChat(packetData);
-                            teamSuffix = dataTypes.ReadNextChat(packetData);
-                        }
-                    }
-
-                    var teamPlayers = new List<string>();
-                    if (teamMethod is 0 or 3 or 4)
-                    {
-                        int playerCount = protocolVersion < MC_1_8_Version
-                            ? dataTypes.ReadNextShort(packetData)
-                            : dataTypes.ReadNextVarInt(packetData);
-                        for (int i = 0; i < playerCount; i++)
-                            teamPlayers.Add(dataTypes.ReadNextString(packetData));
-                    }
-
-                    handler.OnTeam(teamName, teamMethod, teamDisplayName, teamFriendlyFlags,
-                        teamNameTagVisibility, teamCollisionRule, teamColor,
-                        teamPrefix, teamSuffix, teamPlayers);
+                    var teamsPacket = ReadTeamsPacket(dataTypes, packetData, protocolVersion);
+                    handler.OnTeam(teamsPacket.Name, teamsPacket.Method, teamsPacket.DisplayName,
+                        teamsPacket.FriendlyFlags, teamsPacket.NameTagVisibility, teamsPacket.CollisionRule,
+                        teamsPacket.Color, teamsPacket.Prefix, teamsPacket.Suffix, teamsPacket.Players);
                     break;
                 case PacketTypesIn.BlockChangedAck:
                     handler.OnBlockChangeAck(dataTypes.ReadNextVarInt(packetData));
@@ -6912,6 +6766,170 @@ namespace MinecraftClient.Protocol.Handlers
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// A Teams packet (set player team) as read from the wire; the fields a version does not send keep their
+        /// defaults (empty strings, color -1).
+        /// </summary>
+        internal sealed record TeamsPacket(string Name, byte Method, string DisplayName, byte FriendlyFlags,
+            string NameTagVisibility, string CollisionRule, int Color, string Prefix, string Suffix,
+            List<string> Players);
+
+        /// <summary>
+        /// Read a Teams packet the way <paramref name="protocolVersion"/> writes it.
+        /// </summary>
+        internal static TeamsPacket ReadTeamsPacket(DataTypes dataTypes, Queue<byte> packetData, int protocolVersion)
+        {
+            // Wire format per version:
+            //   All versions: name (string), method (byte)
+            //   1.7.x method 0/2:
+            //                 displayName (string), prefix (string), suffix (string),
+            //                 friendlyFire (byte)
+            //   1.8/1.8.9 method 0/2:
+            //                 displayName (string), prefix (string), suffix (string),
+            //                 options (byte), nameTagVisibility, color (byte)
+            //   1.9-1.12.2 method 0/2:
+            //                 displayName (string), prefix (string), suffix (string),
+            //                 options (byte), nameTagVisibility, collisionRule,
+            //                 color (byte)
+            //   1.13-1.21.4 method 0/2:
+            //                 displayName (component), options (byte),
+            //                 nameTagVisibility, collisionRule, color (VarInt),
+            //                 prefix (component), suffix (component)
+            //   1.21.5-26.1 method 0/2:
+            //                 displayName (component), options (byte),
+            //                 nameTagVisibility (VarInt), collisionRule (VarInt),
+            //                 color (VarInt), prefix (component), suffix (component)
+            //   26.2+ method 0/2:
+            //                 displayName (component), prefix (component),
+            //                 suffix (component), nameTagVisibility (VarInt),
+            //                 collisionRule (VarInt), color (Optional<VarInt>),
+            //                 options (byte)
+            //   1.7.x method 0/3/4: players list (Short count + strings)
+            //   1.8+ method 0/3/4: players list (VarInt count + strings)
+            var teamName = dataTypes.ReadNextString(packetData);
+            var teamMethod = dataTypes.ReadNextByte(packetData);
+
+            var teamDisplayName = string.Empty;
+            byte teamFriendlyFlags = 0;
+            var teamNameTagVisibility = string.Empty;
+            var teamCollisionRule = string.Empty;
+            var teamColor = -1;
+            var teamPrefix = string.Empty;
+            var teamSuffix = string.Empty;
+
+            if (teamMethod is 0 or 2)
+            {
+                if (protocolVersion < MC_1_13_Version)
+                {
+                    teamDisplayName = dataTypes.ReadNextString(packetData);
+                    teamPrefix = dataTypes.ReadNextString(packetData);
+                    teamSuffix = dataTypes.ReadNextString(packetData);
+                    teamFriendlyFlags = dataTypes.ReadNextByte(packetData);
+
+                    if (protocolVersion >= MC_1_8_Version)
+                    {
+                        teamNameTagVisibility = dataTypes.ReadNextString(packetData);
+
+                        if (protocolVersion >= MC_1_9_Version)
+                            teamCollisionRule = dataTypes.ReadNextString(packetData);
+
+                        teamColor = unchecked((sbyte)dataTypes.ReadNextByte(packetData));
+                    }
+                }
+                else if (protocolVersion >= MC_26_2_Version)
+                {
+                    teamDisplayName = dataTypes.ReadNextChat(packetData);
+                    teamPrefix = dataTypes.ReadNextChat(packetData);
+                    teamSuffix = dataTypes.ReadNextChat(packetData);
+
+                    // STREAM_CODEC: 0=always, 1=never, 2=hideForOtherTeams, 3=hideForOwnTeam
+                    teamNameTagVisibility = dataTypes.ReadNextVarInt(packetData) switch
+                    {
+                        0 => "always",
+                        1 => "never",
+                        2 => "hideForOtherTeams",
+                        3 => "hideForOwnTeam",
+                        _ => "always"
+                    };
+
+                    // STREAM_CODEC: 0=always, 1=never, 2=pushOtherTeams, 3=pushOwnTeam
+                    teamCollisionRule = dataTypes.ReadNextVarInt(packetData) switch
+                    {
+                        0 => "always",
+                        1 => "never",
+                        2 => "pushOtherTeams",
+                        3 => "pushOwnTeam",
+                        _ => "always"
+                    };
+
+                    // Optional<TeamColor>: bool + VarInt id (ids match legacy color ordinals 0-15)
+                    teamColor = dataTypes.ReadNextBool(packetData)
+                        ? dataTypes.ReadNextVarInt(packetData)
+                        : -1;
+
+                    teamFriendlyFlags = dataTypes.ReadNextByte(packetData);
+                }
+                else
+                {
+                    teamDisplayName = dataTypes.ReadNextChat(packetData);
+                    teamFriendlyFlags = dataTypes.ReadNextByte(packetData);
+
+                    // nameTagVisibility
+                    if (protocolVersion >= MC_1_21_5_Version)
+                    {
+                        // STREAM_CODEC: 0=always, 1=never, 2=hideForOtherTeams, 3=hideForOwnTeam
+                        teamNameTagVisibility = dataTypes.ReadNextVarInt(packetData) switch
+                        {
+                            0 => "always",
+                            1 => "never",
+                            2 => "hideForOtherTeams",
+                            3 => "hideForOwnTeam",
+                            _ => "always"
+                        };
+                    }
+                    else
+                    {
+                        teamNameTagVisibility = dataTypes.ReadNextString(packetData);
+                    }
+
+                    // collisionRule
+                    if (protocolVersion >= MC_1_21_5_Version)
+                    {
+                        // STREAM_CODEC: 0=always, 1=never, 2=pushOtherTeams, 3=pushOwnTeam
+                        teamCollisionRule = dataTypes.ReadNextVarInt(packetData) switch
+                        {
+                            0 => "always",
+                            1 => "never",
+                            2 => "pushOtherTeams",
+                            3 => "pushOwnTeam",
+                            _ => "always"
+                        };
+                    }
+                    else
+                    {
+                        teamCollisionRule = dataTypes.ReadNextString(packetData);
+                    }
+
+                    teamColor = dataTypes.ReadNextVarInt(packetData);
+                    teamPrefix = dataTypes.ReadNextChat(packetData);
+                    teamSuffix = dataTypes.ReadNextChat(packetData);
+                }
+            }
+
+            var teamPlayers = new List<string>();
+            if (teamMethod is 0 or 3 or 4)
+            {
+                int playerCount = protocolVersion < MC_1_8_Version
+                    ? dataTypes.ReadNextShort(packetData)
+                    : dataTypes.ReadNextVarInt(packetData);
+                for (int i = 0; i < playerCount; i++)
+                    teamPlayers.Add(dataTypes.ReadNextString(packetData));
+            }
+
+            return new TeamsPacket(teamName, teamMethod, teamDisplayName, teamFriendlyFlags, teamNameTagVisibility,
+                teamCollisionRule, teamColor, teamPrefix, teamSuffix, teamPlayers);
         }
 
         /// <summary>
