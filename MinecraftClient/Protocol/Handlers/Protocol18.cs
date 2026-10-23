@@ -1225,8 +1225,9 @@ namespace MinecraftClient.Protocol.Handlers
                         }
 
                         // Other
+                        var playerContentClicks = ChatClicks.NewListIfCollecting();
                         var unsignedChatContent = dataTypes.ReadNextBool(packetData)
-                            ? dataTypes.ReadNextChat(packetData)
+                            ? dataTypes.ReadNextChat(packetData, playerContentClicks)
                             : null;
 
                         var filterType = (MessageFilterType)dataTypes.ReadNextVarInt(packetData);
@@ -1244,9 +1245,10 @@ namespace MinecraftClient.Protocol.Handlers
                         // net.minecraft.network.message.MessageType.Serialized#write
                         var chatTypeId = ChatParser.ReadChatTypeHolder(
                             dataTypes, packetData, protocolVersion, out var directChatTypeDecoration);
-                        var chatName = dataTypes.ReadNextChat(packetData);
+                        var playerSenderClicks = ChatClicks.NewListIfCollecting();
+                        var chatName = dataTypes.ReadNextChat(packetData, playerSenderClicks);
                         var targetName = dataTypes.ReadNextBool(packetData)
-                            ? dataTypes.ReadNextChat(packetData)
+                            ? dataTypes.ReadNextChat(packetData, playerSenderClicks)
                             : null;
 
                         var messageTypeEnum =
@@ -1294,7 +1296,8 @@ namespace MinecraftClient.Protocol.Handlers
                         ChatMessage chat = new(message, false, chatTypeId, senderUuid, unsignedChatContent,
                             senderDisplayName, senderTeamName, timestamp, messageSignature, verifyResult)
                         {
-                            chatTypeDecoration = directChatTypeDecoration
+                            chatTypeDecoration = directChatTypeDecoration,
+                            clicks = MergeClicks(playerSenderClicks, playerContentClicks)
                         };
                         lock (MessageSigningLock)
                             Acknowledge(chat);
@@ -1330,23 +1333,26 @@ namespace MinecraftClient.Protocol.Handlers
                         $"HideMessage was not processed! (SigLen={hideMessageSignature.Length})");
                     break;
                 case PacketTypesIn.SystemChat:
-                    var systemMessage = dataTypes.ReadNextChat(packetData);
+                    var systemClicks = ChatClicks.NewListIfCollecting();
+                    var systemMessage = dataTypes.ReadNextChat(packetData, systemClicks);
 
                     if (protocolVersion >= MC_1_19_3_Version)
                     {
                         var isOverlay = dataTypes.ReadNextBool(packetData);
-                        if (isOverlay)
+                        ChatMessage systemChat = new(systemMessage, null, false, -1, Guid.Empty, true)
                         {
-                            if (!Config.Main.Advanced.ShowXPBarMessages)
-                                break;
-                        }
-                        else
+                            isOverlay = isOverlay,
+                            clicks = systemClicks
+                        };
+
+                        if (isOverlay ? !Config.Main.Advanced.ShowXPBarMessages : !Config.Main.Advanced.ShowSystemMessages)
                         {
-                            if (!Config.Main.Advanced.ShowSystemMessages)
-                                break;
+                            // Hidden from the console, still delivered to bots that observe every line.
+                            handler.OnTextObserved(systemChat);
+                            break;
                         }
 
-                        handler.OnTextReceived(new(systemMessage, null, false, -1, Guid.Empty, true));
+                        handler.OnTextReceived(systemChat);
                     }
                     else
                     {
@@ -1358,19 +1364,37 @@ namespace MinecraftClient.Protocol.Handlers
 
                     break;
                 case PacketTypesIn.ProfilelessChatMessage:
-                    var message_ = dataTypes.ReadNextChat(packetData);
+                    var profilelessContentClicks = ChatClicks.NewListIfCollecting();
+                    var message_ = dataTypes.ReadNextChat(packetData, profilelessContentClicks);
                     var messageType_ = ChatParser.ReadChatTypeHolder(
                         dataTypes, packetData, protocolVersion, out var directProfilelessChatTypeDecoration);
-                    var messageName = dataTypes.ReadNextChat(packetData);
+                    var profilelessSenderClicks = ChatClicks.NewListIfCollecting();
+                    var messageName = dataTypes.ReadNextChat(packetData, profilelessSenderClicks);
                     var targetName_ = dataTypes.ReadNextBool(packetData)
-                        ? dataTypes.ReadNextChat(packetData)
+                        ? dataTypes.ReadNextChat(packetData, profilelessSenderClicks)
                         : null;
                     ChatMessage profilelessChat = new(message_, messageName, false, messageType_,
                         Guid.Empty, true);
                     profilelessChat.isSenderJson = false;
                     profilelessChat.teamName = targetName_;
                     profilelessChat.chatTypeDecoration = directProfilelessChatTypeDecoration;
+                    profilelessChat.clicks = MergeClicks(profilelessSenderClicks, profilelessContentClicks);
+                    profilelessChat.isProfileless = true;
                     handler.OnTextReceived(profilelessChat);
+                    break;
+                case PacketTypesIn.ActionBar:
+                    // Never shown in the console (unchanged); only bots that observe every line get it.
+                    if (ChatClicks.Collecting)
+                    {
+                        var actionBarClicks = new List<ChatClick>();
+                        var actionBarText = dataTypes.ReadNextChat(packetData, actionBarClicks);
+                        handler.OnTextObserved(new(actionBarText, null, false, -1, Guid.Empty, true)
+                        {
+                            isOverlay = true,
+                            clicks = actionBarClicks
+                        });
+                    }
+
                     break;
                 case PacketTypesIn.CombatEvent:
                     // 1.8 - 1.16.5
@@ -2508,10 +2532,15 @@ namespace MinecraftClient.Protocol.Handlers
                                 inventorySlots[slotId] = item;
                         }
 
+                        Item? carriedItem = null;
                         if (protocolVersion >= MC_1_17_1_Version) // Carried Item - 1.17.1 and above
-                            dataTypes.ReadNextItemSlot(packetData, itemPalette);
+                            carriedItem = dataTypes.ReadNextItemSlot(packetData, itemPalette);
 
                         handler.OnWindowItems(windowId, inventorySlots, stateId);
+
+                        // The server's word on the cursor, after a full resync (e.g. a click a plugin refused).
+                        if (protocolVersion >= MC_1_17_1_Version)
+                            handler.OnSetSlot(255, -1, carriedItem, stateId);
                     }
 
                     break;
@@ -3522,7 +3551,9 @@ namespace MinecraftClient.Protocol.Handlers
                 case PacketTypesIn.SetCursorItem:
                     if (handler.GetInventoryEnabled())
                     {
-                        dataTypes.ReadNextItemSlot(packetData, itemPalette);
+                        // 1.21.2+: the server's cursor ("carried") item; slot -1 of window 255 is MCC's cursor.
+                        var cursorItem = dataTypes.ReadNextItemSlot(packetData, itemPalette);
+                        handler.OnSetSlot(255, -1, cursorItem, -1);
                     }
                     break;
 
@@ -6871,6 +6902,27 @@ namespace MinecraftClient.Protocol.Handlers
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Clicks of a chat line in reading order: sender (and target) first, then the content.
+        /// </summary>
+        private static List<ChatClick>? MergeClicks(List<ChatClick>? sender, List<ChatClick>? content)
+        {
+            if (sender is null)
+                return content;
+            if (content is null)
+                return sender;
+
+            foreach (var click in content)
+            {
+                if (sender.Count >= ChatClicks.MaxClicks)
+                    break;
+                if (!sender.Contains(click))
+                    sender.Add(click);
+            }
+
+            return sender;
         }
 
         public bool SendRenameItem(string itemName)

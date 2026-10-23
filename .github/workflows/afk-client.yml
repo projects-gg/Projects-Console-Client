@@ -126,6 +126,29 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  # The client's unit tests (MinecraftClient.Tests), on Linux (the cloud host's descriptors) and Windows.
+  # A release needs them green.
+  tests:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test MinecraftClient.Tests/MinecraftClient.Tests.csproj -c Release --logger "console;verbosity=normal"
+
   # The versions MCC can join, grouped by protocol, newest first: [{value, label}]. The script fails
   # when ProtocolHandler.cs does not parse as expected, so the list is never empty or partial.
   versions:
@@ -268,7 +291,7 @@ jobs:
 
   release:
     name: GitHub release
-    needs: manifest
+    needs: [manifest, tests]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 10

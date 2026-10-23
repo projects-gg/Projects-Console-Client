@@ -40,6 +40,11 @@ namespace MinecraftClient.Inventory
         public List<StructuredComponent>? Components;
 
         /// <summary>
+        /// 1.20.6+ names of the default components this stack removes (e.g. "minecraft:glider"); null when none.
+        /// </summary>
+        public List<string>? RemovedComponents;
+
+        /// <summary>
         /// Create an item with ItemType, Count and Metadata
         /// </summary>
         /// <param name="itemType">Type of the item</param>
@@ -62,7 +67,7 @@ namespace MinecraftClient.Inventory
         /// </summary>
         public Item CloneWithCount(int count)
         {
-            return new Item(Type, count, Data, NBT) { Components = Components };
+            return new Item(Type, count, Data, NBT) { Components = Components, RemovedComponents = RemovedComponents };
         }
 
         /// <summary>

@@ -96,6 +96,13 @@ namespace MinecraftClient.Protocol
         public void OnTextReceived(ChatMessage message);
 
         /// <summary>
+        /// Received a chat, system or action bar message that the console does not show
+        /// (hidden by settings, or an action bar). Only bots that observe every line get it.
+        /// </summary>
+        /// <param name="message">Message received</param>
+        public void OnTextObserved(ChatMessage message);
+
+        /// <summary>
         /// Called when the server synchronizes a dialog registry entry.
         /// </summary>
         void OnDialogRegistryData(int protocolId, string resourceId, DialogDefinition dialog);

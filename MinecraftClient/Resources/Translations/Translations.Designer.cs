@@ -60,6 +60,24 @@ namespace MinecraftClient {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Agent bridge: inventory handling is off, so windows and items are not reported..
+        /// </summary>
+        internal static string bot_agentBridge_inventory_disabled {
+            get {
+                return ResourceManager.GetString("bot.agentBridge.inventory_disabled", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Agent bridge could not start ({0}); continuing without it..
+        /// </summary>
+        internal static string bot_agentBridge_unavailable {
+            get {
+                return ResourceManager.GetString("bot.agentBridge.unavailable", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Weather change: It is no longer raining..
         /// </summary>
         internal static string bot_alerts_end_rain {

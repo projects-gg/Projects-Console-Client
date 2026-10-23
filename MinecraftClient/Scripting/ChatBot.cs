@@ -174,6 +174,16 @@ namespace MinecraftClient.Scripting
         public virtual void GetText(string text, string? json) { }
 
         /// <summary>
+        /// Every chat, system and action bar line, including the ones the console hides by settings.
+        /// The message tells its kind (<see cref="Protocol.Message.ChatMessage.isSystemChat"/>,
+        /// <see cref="Protocol.Message.ChatMessage.isOverlay"/>) and, while
+        /// <see cref="Protocol.Message.ChatClicks.Collecting"/> is set, the click actions of its components.
+        /// </summary>
+        /// <param name="text">Text from the server, with formatting codes</param>
+        /// <param name="message">The message as received</param>
+        public virtual void OnChatReceived(string text, Protocol.Message.ChatMessage message) { }
+
+        /// <summary>
         /// Is called when the client has been disconnected fom the server
         /// </summary>
         /// <param name="reason">Disconnect Reason</param>
