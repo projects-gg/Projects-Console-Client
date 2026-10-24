@@ -118,6 +118,25 @@ public sealed class AgentBridgeV2Tests
     }
 
     [Fact]
+    public void CloseDoesNotWaitForTheWindowContent()
+    {
+        // A window the server sent but never filled (Canvas's thread guard threw while opening it) can be closed.
+        AgentOperation close = Parse("""{"op":"close","win":3,"ws":40}""", arrival: 9);
+        AgentOperation click = Parse("""{"op":"click","win":3,"ws":40,"slot":1,"mode":"pickup"}""", arrival: 9);
+        AgentOperation rename = Parse("""{"op":"rename","win":3,"ws":40,"text":"100"}""", arrival: 9);
+
+        Assert.Null(AgentBridge.WindowRefusal(close, 3, 40, 8, contentSent: false));
+        Assert.Equal("not_ready", AgentBridge.WindowRefusal(click, 3, 40, 8, contentSent: false));
+        Assert.Equal("not_ready", AgentBridge.WindowRefusal(rename, 3, 40, 8, contentSent: false));
+        Assert.Null(AgentBridge.WindowRefusal(click, 3, 40, 8, contentSent: true));
+
+        // The rest of the window check holds for close too.
+        Assert.Equal("wrong_window", AgentBridge.WindowRefusal(close, 4, 40, 8, contentSent: false));
+        Assert.Equal("wrong_window", AgentBridge.WindowRefusal(close, 3, 41, 8, contentSent: false));
+        Assert.Equal("stale", AgentBridge.WindowRefusal(close, 3, 40, 9, contentSent: false));
+    }
+
+    [Fact]
     public void UseIsAtMostOneASecond()
     {
         AgentBridge.OperationBudget budget = new(1);

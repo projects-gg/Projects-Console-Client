@@ -579,15 +579,27 @@ namespace MinecraftClient.ChatBots
         {
             if (window is null)
                 return "no_window";
-            if (operation.Window != window.Id)
+            return WindowRefusal(operation, window.Id, window.OpenSeq, window.OpenArrival, window.ContentSent);
+        }
+
+        /// <summary>
+        /// Why an operation on the open window may not run now, or null: <c>win</c> and <c>ws</c> must be the window's
+        /// and the operation sent after the window opened. Clicks and names also wait for the window's content to be
+        /// reported; <c>close</c> does not, so a window the server sent but never filled (a plugin that failed while
+        /// opening it, as Folia's thread checks make one do) can still be closed.
+        /// </summary>
+        internal static string? WindowRefusal(AgentOperation operation, int windowId, long openSeq, long openArrival,
+            bool contentSent)
+        {
+            if (operation.Window != windowId)
                 return "wrong_window";
             if (operation.WindowSeq is null)
                 return "bad_request";
-            if (operation.WindowSeq != window.OpenSeq)
+            if (operation.WindowSeq != openSeq)
                 return "wrong_window";
-            if (operation.Arrival <= window.OpenArrival)
+            if (operation.Arrival <= openArrival)
                 return "stale";
-            if (!window.ContentSent)
+            if (!contentSent && operation.Op != AgentOperation.Close)
                 return "not_ready";
             return null;
         }

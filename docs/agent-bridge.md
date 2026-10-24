@@ -207,9 +207,10 @@ fails (`left`); no partial window is reported.
   answer: `ack {id, op}` or `err {id, op, reason}`. `ack` means the packet was sent; what the server did
   shows in the window events that follow (a plugin may refuse a click and resync the slot).
 - Window operations (`click`, `rename`, `close`) act only on the open window, and only when `win` and `ws`
-  are those of its last `win_open`, the operation arrived after that `win_open` was written, and the window's
-  content was already reported. This keeps an operation meant for one window from landing in another that
-  reuses its id.
+  are those of its last `win_open`, the operation arrived after that `win_open` was written, and (`click` and
+  `rename`) the window's content was already reported. This keeps an operation meant for one window from landing
+  in another that reuses its id. `close` does not wait for the content (from 4.1.1): a window the server sent but
+  never filled can still be closed.
 - `slot`: 0 ≤ slot < `total`. Nothing else: no drops, no clicks outside the window (-999), no number-key
   swaps, no creative actions.
 - `rename`: the open window must be an `anvil`; `text` must be 1–12 ASCII digits (a money amount). The anvil
@@ -233,7 +234,7 @@ fails (`left`); no partial window is reported.
 | `stale` | from before the current session or before the window opened |
 | `no_window` | no window is open |
 | `wrong_window` | `win`/`ws` are not the open window's |
-| `not_ready` | the window's content was not reported yet |
+| `not_ready` | the window's content was not reported yet (`close` does not wait for it) |
 | `bad_slot` | slot out of range |
 | `bad_mode`, `bad_button` | mode or button not allowed |
 | `not_anvil` | `rename` on a window that is not an anvil |
@@ -320,7 +321,8 @@ From this version:
 ## Version 2 (client 4.1.1)
 
 For the cloud features (live inventory, console kinds, reply placeholders). Each part starts only with the variable
-`afk-host` sets for it; without them the client behaves as version 1, apart from `hello.v` (2).
+`afk-host` sets for it; without them the client behaves as version 1, apart from `hello.v` (2) and `close`, which no
+longer waits for the window's content (below).
 
 ### Event groups (`MCC_AGENT_EVENTS`)
 
@@ -349,6 +351,11 @@ For the cloud features (live inventory, console kinds, reply placeholders). Each
   resyncs the slot, and that change follows as usual.
 - Without `MCC_AGENT_EVENTS` the timing is version 1's: an event for every packet, nothing after a move the server
   does not answer.
+- `close` is accepted before the window's content was reported, for every host. On Canvas (Folia) with
+  `guard-severity: THROW`, a menu opened from the wrong region thread (a console command, a global-region task) fails
+  after the window was sent: the client gets `win_open` and never `win_items`. A player closes such a window with
+  Esc; the bot now can too (the trial of 24 Oct 2026 on a local Canvas 26.3 saw exactly this). Clicks, drops and
+  `rename` still wait for the content (`not_ready`).
 
 ### The player inventory
 
