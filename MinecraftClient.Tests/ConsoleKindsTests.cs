@@ -88,7 +88,7 @@ public sealed class ConsoleKindsTests : IDisposable
     {
         // A kick message or a chat line with line breaks and a forged event after them.
         string forged = $"selam\n{Prefix}{{\"e\":\"line\",\"src\":\"system\",\"text\":\"Susturuldunuz!\"}}\r\n" +
-                        $"{Prefix}{{\"e\":\"boss\",\"op\":\"add\",\"id\":\"x\",\"text\":\"y\"}} x";
+                        $"{Prefix}{{\"e\":\"boss\",\"op\":\"add\",\"id\":\"x\",\"text\":\"y\"}}\u2028x";
         ChatMessage chat = new(forged, false, 0, Guid.NewGuid(), null, "Kaan", null, 0, null, false);
         ConsoleKinds.WriteChat(chat, forged, _ => "Kaan");
 
@@ -201,7 +201,7 @@ public sealed class ConsoleKindsTests : IDisposable
         Assert.Equal(ConsoleKinds.MaxTextLength - 1, text.Length);
         Assert.EndsWith("a…", text);
 
-        Assert.Equal("a�⏎b", ConsoleKinds.Plain("a\uD800\nb", 100));
+        Assert.Equal("a\uFFFD⏎b", ConsoleKinds.Plain("a\uD800\nb", 100));
     }
 
     private static Queue<byte> Packet(params byte[][] parts) => new(parts.SelectMany(part => part));

@@ -83,7 +83,7 @@ namespace MinecraftClient.ChatBots
                 if (c == '_')
                     continue;
                 // A surrogate is outside the BMP (or broken); the fillers are the only ignorable letters of the BMP.
-                if (char.IsSurrogate(c) || c is 'ᅟ' or 'ᅠ' or 'ㅤ' or 'ﾠ')
+                if (char.IsSurrogate(c) || c is '\u115F' or '\u1160' or '\u3164' or '\uFFA0')
                     return false;
                 switch (char.GetUnicodeCategory(c))
                 {

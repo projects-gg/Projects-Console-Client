@@ -338,8 +338,9 @@ For the cloud features (live inventory, console kinds, reply placeholders). Each
   component's NBT tree written as JSON (compounds as objects with sorted keys, lists as arrays, numbers as numbers, a
   plain string root as a JSON string); before, its JSON text written compactly (text that is not JSON becomes a JSON
   string). Fonts (`font`), colors and every glyph are kept, so a custom menu whose background is drawn with resource
-  pack glyphs can be recognised. `title` stays the plain text, cut at 256 characters. `titleRaw` is left out when it
-  is larger than 32 KiB or the tree had to be cut.
+  pack glyphs can be recognised. `title` stays the plain text, cut at 256 characters; it keeps Private Use Area
+  characters (U+E000–U+F8FF), with which ItemsAdder draws menu backgrounds, as they are (only formatting codes and
+  line breaks change). `titleRaw` is left out when it is larger than 32 KiB or the tree had to be cut.
 - With `MCC_AGENT_EVENTS` set (a version 2 host), window content is reported once a tick (50 ms): a burst of slot
   packets becomes one `win_items` or `win_slot` change.
 - After the bot's own `click` or `drop` (once acked), the window (`win_slot`) and the player inventory (`inv`) are
@@ -386,6 +387,11 @@ For the cloud features (live inventory, console kinds, reply placeholders). Each
 | --- | --- | --- |
 | `potion` | the potion of `minecraft:potion_contents` as a registry id (`"minecraft:strong_swiftness"`); before 1.20.5 the NBT's `Potion`. A potion number the client does not know makes the item `unparsed` | real data |
 | `color` | `minecraft:dyed_color`, else the potion's `custom_color` (before 1.20.5: `display.color`, else `CustomPotionColor`), an RGB integer (0–16777215) | real data |
+| `cmd` | custom model data: from 1.21.4 the first of its `floats` floored to an integer (only when finite and within a 32-bit int), 1.20.5–1.21.3 the component's int, before 1.20.5 the NBT's `CustomModelData` | server data (a number, not text) |
+| `model` | the `minecraft:item_model` component (1.21.2+), only when the stack's patch carries it | server data (an id, not text) |
+
+`cmd` and `model` are what item art maps a server's custom items by; nested items (`container`, `bundle_contents`)
+carry them too.
 
 Text fields and click values that carry ill-formed UTF-16 (a lone surrogate) get U+FFFD in its place.
 

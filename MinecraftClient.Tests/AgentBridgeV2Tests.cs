@@ -199,6 +199,48 @@ public sealed class AgentBridgeV2Tests
     }
 
     [Fact]
+    public void ItemArtKeysAreNumbersAndIds()
+    {
+        CustomModelDataComponent modelData = new(dataTypes, palette, subComponents)
+        {
+            ComponentName = "minecraft:custom_model_data",
+            Floats = [1001.9f],
+        };
+        ItemModelComponent model = new(dataTypes, palette, subComponents)
+        {
+            ComponentName = "minecraft:item_model",
+            Identifier = "itemsadder:ruby_sword",
+        };
+        JsonObject json = Render(new Item(ItemType.DiamondSword, 1, null) { Components = [modelData, model] });
+        Assert.Equal(1001, (int)json["cmd"]!);
+        Assert.Equal("itemsadder:ruby_sword", (string)json["model"]!);
+
+        // 1.21.4+: the first float, floored, only when finite and within an int.
+        Assert.Equal(-4, AgentBridgeItems.ModelDataNumber(-3.5f));
+        Assert.Equal(int.MinValue, AgentBridgeItems.ModelDataNumber(-2147483648f));
+        Assert.Null(AgentBridgeItems.ModelDataNumber(float.NaN));
+        Assert.Null(AgentBridgeItems.ModelDataNumber(float.PositiveInfinity));
+        Assert.Null(AgentBridgeItems.ModelDataNumber(3e9f));
+
+        // 1.20.5-1.21.3: the component's int; before 1.20.5: the NBT's CustomModelData; nothing without them.
+        CustomModelDataComponent1206 old = new(dataTypes, palette, subComponents) { ComponentName = "minecraft:custom_model_data", Value = 42 };
+        Assert.Equal(42, (int)Render(new Item(ItemType.Paper, 1, null) { Components = [old] })["cmd"]!);
+        Assert.Equal(7, (int)Render(new Item(ItemType.Paper, 1, new Dictionary<string, object> { ["CustomModelData"] = 7 }))["cmd"]!);
+        CustomModelDataComponent empty = new(dataTypes, palette, subComponents) { ComponentName = "minecraft:custom_model_data" };
+        JsonObject plain = Render(new Item(ItemType.Paper, 1, null) { Components = [empty] });
+        Assert.Null(plain["cmd"]);
+        Assert.Null(plain["model"]);
+    }
+
+    [Fact]
+    public void WindowTitlesKeepPrivateUseGlyphs()
+    {
+        // ItemsAdder draws menu backgrounds with Private Use Area glyphs: only formatting codes go.
+        string glyphs = new string(new[] { (char)0xE001, (char)0xF801, (char)0xF8FF });
+        Assert.Equal(glyphs + "Kitler", AgentBridgeItems.Plain("§f" + glyphs + "§6Kitler"));
+    }
+
+    [Fact]
     public void RawTitlesKeepFontsAndGlyphs()
     {
         // 26.3: a custom menu title, a resource pack glyph drawing the background, then the visible name.
@@ -238,8 +280,8 @@ public sealed class AgentBridgeV2Tests
     [Fact]
     public void IllFormedTextNeverBreaksAnEvent()
     {
-        Assert.Equal("a�b", AgentBridgeItems.WellFormed("a\uD800b"));
-        Assert.Equal("a�", AgentBridgeItems.WellFormed("a\uDC00"));
+        Assert.Equal("a\uFFFDb", AgentBridgeItems.WellFormed("a\uD800b"));
+        Assert.Equal("a\uFFFD", AgentBridgeItems.WellFormed("a\uDC00"));
         Assert.Equal("😀x", AgentBridgeItems.WellFormed("😀x"));
         Assert.Same("plain", AgentBridgeItems.WellFormed("plain"));
 
@@ -250,6 +292,6 @@ public sealed class AgentBridgeV2Tests
         // An anvil name with a lone surrogate used to make the JSON writer throw.
         CustomNameComponent name = new(dataTypes, palette, subComponents) { ComponentName = "minecraft:custom_name", CustomName = "Kılıç\uD800" };
         JsonObject item = Render(new Item(ItemType.Paper, 1, null) { Components = [name] });
-        Assert.Equal("Kılıç�", (string)item["name"]!);
+        Assert.Equal("Kılıç\uFFFD", (string)item["name"]!);
     }
 }

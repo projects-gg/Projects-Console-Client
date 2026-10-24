@@ -210,62 +210,62 @@
     },
     {
       "name": "a combining accent",
-      "value": "é",
+      "value": "e\u0301",
       "ok": false
     },
     {
       "name": "a zero-width space",
-      "value": "Ka​an",
+      "value": "Ka\u200Ban",
       "ok": false
     },
     {
       "name": "a zero-width joiner",
-      "value": "Ka‍an",
+      "value": "Ka\u200Dan",
       "ok": false
     },
     {
       "name": "a right-to-left override",
-      "value": "Kaan‮",
+      "value": "Kaan\u202E",
       "ok": false
     },
     {
       "name": "a first strong isolate",
-      "value": "⁨Kaan",
+      "value": "\u2068Kaan",
       "ok": false
     },
     {
       "name": "a no-break space",
-      "value": "Kaan Ali",
+      "value": "Kaan\u00A0Ali",
       "ok": false
     },
     {
       "name": "a soft hyphen",
-      "value": "Ka­an",
+      "value": "Ka\u00ADan",
       "ok": false
     },
     {
       "name": "a Hangul filler",
-      "value": "ㅤ",
+      "value": "\u3164",
       "ok": false
     },
     {
       "name": "a Hangul choseong filler",
-      "value": "ᅟ",
+      "value": "\u115F",
       "ok": false
     },
     {
       "name": "a Hangul jungseong filler",
-      "value": "aᅠ",
+      "value": "a\u1160",
       "ok": false
     },
     {
       "name": "a halfwidth Hangul filler",
-      "value": "ﾠb",
+      "value": "\uFFA0b",
       "ok": false
     },
     {
       "name": "a byte order mark",
-      "value": "﻿Kaan",
+      "value": "\uFEFFKaan",
       "ok": false
     },
     {
@@ -459,7 +459,7 @@
       "line": {
         "type": "public",
         "sender": "Kaan",
-        "message": "!davet Ali‮"
+        "message": "!davet Ali\u202E"
       },
       "reply": null,
       "why": "value"
@@ -475,7 +475,7 @@
       "line": {
         "type": "public",
         "sender": "Kaan",
-        "message": "!davet Ka​an"
+        "message": "!davet Ka\u200Ban"
       },
       "reply": null,
       "why": "value"
@@ -491,7 +491,7 @@
       "line": {
         "type": "public",
         "sender": "Kaan",
-        "message": "!davet ㅤ"
+        "message": "!davet \u3164"
       },
       "reply": null,
       "why": "value"

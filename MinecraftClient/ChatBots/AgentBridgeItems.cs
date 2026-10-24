@@ -80,7 +80,7 @@ namespace MinecraftClient.ChatBots
                 }
                 else
                 {
-                    result.Append(char.IsSurrogate(c) ? '�' : c);
+                    result.Append(char.IsSurrogate(c) ? '\uFFFD' : c);
                 }
             }
 
@@ -173,6 +173,18 @@ namespace MinecraftClient.ChatBots
             if ((dyedColor ?? customColor) is { } color)
                 writer.WriteNumber("color", color & 0xFFFFFF);
 
+            // The keys item art maps a server's custom items by: a number and an id, never text.
+            int? customModelData = Find("minecraft:custom_model_data") switch
+            {
+                CustomModelDataComponent data => data.Floats.Count > 0 ? ModelDataNumber(data.Floats[0]) : null,
+                CustomModelDataComponent1206 data => data.Value,
+                _ => null,
+            };
+            if (customModelData is { } cmd)
+                writer.WriteNumber("cmd", cmd);
+            if (Find("minecraft:item_model") is ItemModelComponent { Identifier.Length: > 0 } itemModel)
+                writer.WriteString("model", Plain(itemModel.Identifier));
+
             writer.WriteStartArray("cnames");
             foreach (StructuredComponent component in components)
                 writer.WriteStringValue(component.ComponentName);
@@ -219,6 +231,18 @@ namespace MinecraftClient.ChatBots
 
             writer.WriteEndObject();
             return unparsed;
+        }
+
+        /// <summary>
+        /// The custom model data number of 1.21.4+ (its first float): floored to an integer, only when it is finite and
+        /// fits an int.
+        /// </summary>
+        internal static int? ModelDataNumber(float value)
+        {
+            if (!float.IsFinite(value))
+                return null;
+            double floored = Math.Floor((double)value);
+            return floored is >= int.MinValue and <= int.MaxValue ? (int)floored : null;
         }
 
         private static bool WriteEnchantments(Utf8JsonWriter writer, string property, StructuredComponent? component)
@@ -290,6 +314,8 @@ namespace MinecraftClient.ChatBots
                     : null;
             if (legacyColor is { } color)
                 writer.WriteNumber("color", color & 0xFFFFFF);
+            if (nbt.TryGetValue("CustomModelData", out object? legacyModelData) && legacyModelData is int legacyCmd)
+                writer.WriteNumber("cmd", legacyCmd);
 
             bool unparsed = false;
             unparsed |= WriteLegacyEnchantments(writer, "ench", nbt, "Enchantments");
