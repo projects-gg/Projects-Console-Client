@@ -23,6 +23,12 @@ namespace MinecraftClient.Inventory
         public string? Title;
 
         /// <summary>
+        /// The title as the server sent it: the NBT tree of the text component from 1.20.4, else its JSON text. Keeps
+        /// what the rendered <see cref="Title"/> drops, such as the resource pack fonts of a custom menu's glyphs.
+        /// </summary>
+        public object? TitleComponent;
+
+        /// <summary>
         /// state of container
         /// </summary>
         public int StateID;

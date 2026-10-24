@@ -9,6 +9,8 @@ using System.Text.RegularExpressions;
 using MinecraftClient.Inventory;
 using MinecraftClient.Protocol.Handlers.StructuredComponents.Components;
 using MinecraftClient.Protocol.Handlers.StructuredComponents.Components._1_20_6;
+using MinecraftClient.Protocol.Handlers.StructuredComponents.Components._1_21_2;
+using MinecraftClient.Protocol.Handlers.StructuredComponents.Components._1_21_5;
 using MinecraftClient.Protocol.Handlers.StructuredComponents.Components._26_1;
 using MinecraftClient.Protocol.Handlers.StructuredComponents.Core;
 using MinecraftClient.Scripting;
@@ -42,8 +44,47 @@ namespace MinecraftClient.ChatBots
         /// <summary>Plain text: no formatting codes, line breaks as "⏎", cut to <paramref name="maxLength"/>.</summary>
         public static string Plain(string? text, int maxLength = MaxTextLength)
         {
-            string plain = ConsoleIO.KeepOnOneLine(ChatBot.GetVerbatim(text));
-            return plain.Length <= maxLength ? plain : plain[..maxLength];
+            string plain = WellFormed(ConsoleIO.KeepOnOneLine(ChatBot.GetVerbatim(text)));
+            if (plain.Length <= maxLength)
+                return plain;
+            // Never end on the first half of a surrogate pair.
+            return char.IsHighSurrogate(plain[maxLength - 1]) ? plain[..(maxLength - 1)] : plain[..maxLength];
+        }
+
+        /// <summary>
+        /// <paramref name="text"/> with every lone surrogate replaced by U+FFFD: JSON writers refuse ill-formed UTF-16,
+        /// and a server may send it.
+        /// </summary>
+        public static string WellFormed(string text)
+        {
+            int i = 0;
+            for (; i < text.Length; i++)
+            {
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                    i++;
+                else if (char.IsSurrogate(text[i]))
+                    break;
+            }
+
+            if (i == text.Length)
+                return text;
+
+            StringBuilder result = new(text.Length);
+            result.Append(text, 0, i);
+            for (; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    result.Append(c).Append(text[++i]);
+                }
+                else
+                {
+                    result.Append(char.IsSurrogate(c) ? '�' : c);
+                }
+            }
+
+            return result.ToString();
         }
 
         /// <summary>
@@ -105,6 +146,32 @@ namespace MinecraftClient.ChatBots
                 writer.WriteNumber("damage", damage.Damage);
             if (Find("minecraft:max_damage") is MaxDamageComponent maxDamage)
                 writer.WriteNumber("maxDamage", maxDamage.MaxDamage);
+
+            // The potion and the color an item is drawn with (agent bridge version 2).
+            (bool hasPotion, int potionId, int? customColor) = Find("minecraft:potion_contents") switch
+            {
+                PotionContentsComponent potion => (potion.HasPotionId, potion.PotionId,
+                    potion.HasCustomColor ? potion.CustomColor : (int?)null),
+                PotionContentsComponent1212 potion => (potion.HasPotionId, potion.PotionId,
+                    potion.HasCustomColor ? potion.CustomColor : (int?)null),
+                _ => (false, 0, null),
+            };
+            if (hasPotion)
+            {
+                if (PotionRegistry.Name(potionId) is { } potionName)
+                    writer.WriteString("potion", potionName);
+                else
+                    unparsed = true;
+            }
+
+            int? dyedColor = Find("minecraft:dyed_color") switch
+            {
+                DyeColorComponent dye => dye.Color,
+                DyeColorComponent1215 dye => dye.Color,
+                _ => null,
+            };
+            if ((dyedColor ?? customColor) is { } color)
+                writer.WriteNumber("color", color & 0xFFFFFF);
 
             writer.WriteStartArray("cnames");
             foreach (StructuredComponent component in components)
@@ -211,6 +278,19 @@ namespace MinecraftClient.ChatBots
             if (item.Damage != 0)
                 writer.WriteNumber("damage", item.Damage);
 
+            // Before 1.20.5 the potion is a registry id in the NBT already; colors are integers there too.
+            if (nbt.TryGetValue("Potion", out object? potion) && potion is string { Length: > 0 } potionId)
+                writer.WriteString("potion", Plain(potionId.Contains(':') ? potionId : "minecraft:" + potionId, 64));
+            int? legacyColor = nbt.TryGetValue("display", out object? display)
+                               && display is Dictionary<string, object> displayTag
+                               && displayTag.TryGetValue("color", out object? dyed) && dyed is int dyedColor
+                ? dyedColor
+                : nbt.TryGetValue("CustomPotionColor", out object? custom) && custom is int customColor
+                    ? customColor
+                    : null;
+            if (legacyColor is { } color)
+                writer.WriteNumber("color", color & 0xFFFFFF);
+
             bool unparsed = false;
             unparsed |= WriteLegacyEnchantments(writer, "ench", nbt, "Enchantments");
             unparsed |= WriteLegacyEnchantments(writer, "stored", nbt, "StoredEnchantments");
@@ -245,6 +325,62 @@ namespace MinecraftClient.ChatBots
 
             writer.WriteEndObject();
             return unknown;
+        }
+
+        /// <summary>Largest raw text component a window event carries, in UTF-8 bytes of its JSON.</summary>
+        public const int MaxRawComponentBytes = 32 * 1024;
+
+        private static readonly JsonWriterOptions rawComponentOptions = new()
+        {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        };
+
+        /// <summary>
+        /// A text component as the server sent it, as one line of JSON: an NBT tree (1.20.4+) the way
+        /// <see cref="WriteNbt"/> writes it (a plain string root as a JSON string), a JSON text re-written compactly,
+        /// and text that is not JSON as a JSON string. Fonts, colors and every glyph are kept. Null when there is none,
+        /// it is larger than <see cref="MaxRawComponentBytes"/> or the tree had to be cut.
+        /// </summary>
+        public static byte[]? RawComponent(object? component)
+        {
+            if (component is null)
+                return null;
+
+            var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+            bool complete = true;
+            try
+            {
+                using Utf8JsonWriter writer = new(buffer, rawComponentOptions);
+                switch (component)
+                {
+                    case Dictionary<string, object> nbt:
+                        object? root = nbt.Count == 1 && nbt.TryGetValue("", out object? value) ? value : nbt;
+                        complete = WriteNbt(writer, root);
+                        break;
+                    case string text:
+                        try
+                        {
+                            using JsonDocument document = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = 64 });
+                            document.RootElement.WriteTo(writer);
+                        }
+                        catch (JsonException)
+                        {
+                            writer.Reset();
+                            buffer.Clear();
+                            writer.WriteStringValue(WellFormed(text));
+                        }
+
+                        break;
+                    default:
+                        return null;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+
+            return complete && buffer.WrittenCount <= MaxRawComponentBytes ? buffer.WrittenSpan.ToArray() : null;
         }
 
         /// <summary>
@@ -282,7 +418,7 @@ namespace MinecraftClient.ChatBots
                     writer.WriteEndObject();
                     break;
                 case string text:
-                    writer.WriteStringValue(text);
+                    writer.WriteStringValue(WellFormed(text));
                     break;
                 case bool flag:
                     writer.WriteBooleanValue(flag);

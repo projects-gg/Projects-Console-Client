@@ -1502,6 +1502,15 @@ namespace MinecraftClient.Protocol.Handlers
         /// <param name="clicks">When not null, receives the component's click actions</param>
         public string ReadNextChat(Queue<byte> cache, List<ChatClick>? clicks)
         {
+            return ReadNextChat(cache, clicks, out _);
+        }
+
+        /// <summary>
+        /// Read a text component and render it as formatted text; <paramref name="raw"/> is the component as the
+        /// server sent it (its NBT tree, or its JSON text).
+        /// </summary>
+        public string ReadNextChat(Queue<byte> cache, List<ChatClick>? clicks, out object raw)
+        {
             if (protocolversion >= Protocol18Handler.MC_1_20_4_Version)
             {
                 // Vanilla 1.20.4+ uses NBT here, but Hypixel exposed a JSON-string fallback on the same path.
@@ -1511,6 +1520,7 @@ namespace MinecraftClient.Protocol.Handlers
                     var r = ReadNextNbt(cache);
                     if (clicks is not null)
                         ChatClicks.Collect(r, clicks);
+                    raw = r;
                     return ChatParser.ParseText(r);
                 }
                 catch (System.IO.InvalidDataException)
@@ -1525,6 +1535,7 @@ namespace MinecraftClient.Protocol.Handlers
             var json = ReadNextString(cache);
             if (clicks is not null)
                 ChatClicks.CollectJson(json, clicks);
+            raw = json;
             return ChatParser.ParseText(json);
         }
 

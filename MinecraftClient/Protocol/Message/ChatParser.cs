@@ -37,6 +37,12 @@ namespace MinecraftClient.Protocol.Message
 
         public static Dictionary<int, MessageType>? ChatId2Type;
 
+        /// <summary>Registry ids of the server's chat types ("minecraft:msg_command_incoming", "example:shout").</summary>
+        private static readonly Dictionary<int, string> ChatId2Name = new();
+
+        /// <summary>The registry id of a chat type the server sent (1.19+), or null.</summary>
+        internal static string? ChatTypeName(int chatId) => ChatId2Name.GetValueOrDefault(chatId);
+
         internal enum ChatTypeParameter
         {
             Sender,
@@ -71,6 +77,7 @@ namespace MinecraftClient.Protocol.Message
             };
 
             ChatId2Type = chatTypeDictionary;
+            ChatId2Name[chatId] = chatName;
 
             if (TryReadChatTypeDecoration(chatTypeData, out var decoration))
                 ChatId2Decoration[chatId] = decoration;

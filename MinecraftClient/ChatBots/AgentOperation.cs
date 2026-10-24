@@ -6,8 +6,9 @@ namespace MinecraftClient.ChatBots
 {
     /// <summary>
     /// One operation from the agent bridge's input (docs/agent-bridge.md): a window click, an anvil name, a window
-    /// close, a hotbar slot or a snapshot request. There is no text command: chat and commands keep going through
-    /// stdin, built by the host from fixed templates.
+    /// close, a hotbar slot or a snapshot request; from version 2 also a drop, using the held item, and clicks and
+    /// drops on the player inventory while no window is open (<c>win: 0, ws: 0</c>). There is no text command: chat
+    /// and commands keep going through stdin, built by the host from fixed templates.
     /// </summary>
     internal sealed record AgentOperation
     {
@@ -16,6 +17,8 @@ namespace MinecraftClient.ChatBots
         public const string Close = "close";
         public const string Hold = "hold";
         public const string Snapshot = "snapshot";
+        public const string Drop = "drop";
+        public const string Use = "use";
 
         public const int MaxIdLength = 64;
         public const int MaxRenameLength = 12;
@@ -38,6 +41,12 @@ namespace MinecraftClient.ChatBots
         public string? Mode { get; init; }
         public string? Text { get; init; }
         public string? What { get; init; }
+
+        /// <summary><c>drop</c>: the whole stack instead of one item.</summary>
+        public bool Stack { get; init; }
+
+        /// <summary>A click or drop on the player inventory while no window is open: <c>win: 0, ws: 0</c>.</summary>
+        public bool OnPlayerInventory => Window == 0 && WindowSeq == 0;
 
         /// <summary>
         /// Parse and check the shape of one input line. On failure, <paramref name="op"/> and
@@ -84,7 +93,7 @@ namespace MinecraftClient.ChatBots
                     return false;
 
                 op = opElement.GetString();
-                if (op is not (Click or Rename or Close or Hold or Snapshot))
+                if (op is not (Click or Rename or Close or Hold or Snapshot or Drop or Use))
                 {
                     reason = "unknown_op";
                     op = op is { Length: <= 16 } ? op : "?";
@@ -103,12 +112,16 @@ namespace MinecraftClient.ChatBots
                 if (root.TryGetProperty("ws", out JsonElement windowSeqElement))
                 {
                     if (windowSeqElement.ValueKind != JsonValueKind.Number || !windowSeqElement.TryGetInt64(out long value)
-                                                                            || value <= 0)
+                                                                            || value < 0)
+                        return false;
+                    // 0 names no opening of a window: only a click or drop on the player inventory (win 0) uses it.
+                    if (value == 0 && !(window == 0 && op is (Click or Drop)))
                         return false;
                     windowSeq = value;
                 }
 
                 int slot = 0, button = 0;
+                bool stack = false;
                 string? mode = null, text = null, what = null;
                 switch (op)
                 {
@@ -151,6 +164,23 @@ namespace MinecraftClient.ChatBots
                         if (what is not ("inv" or "win"))
                             return false;
                         break;
+
+                    case Drop:
+                        if (window is null
+                            || !root.TryGetProperty("slot", out JsonElement dropSlotElement)
+                            || !TryReadInt(dropSlotElement, 0, short.MaxValue, out slot))
+                            return false;
+                        if (root.TryGetProperty("stack", out JsonElement stackElement))
+                        {
+                            if (stackElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                                return false;
+                            stack = stackElement.GetBoolean();
+                        }
+
+                        break;
+
+                    case Use:
+                        break;
                 }
 
                 operation = new AgentOperation
@@ -165,6 +195,7 @@ namespace MinecraftClient.ChatBots
                     Mode = mode,
                     Text = text,
                     What = what,
+                    Stack = stack,
                 };
                 reason = null;
                 return true;

@@ -13,7 +13,9 @@ namespace MinecraftClient.ChatBots
     /// <summary>
     /// Out-of-band bridge for the AFK+ agent host (contract: docs/agent-bridge.md). Reports chat lines with the click
     /// actions of their components, windows and their items, the player inventory, the held slot, the position and
-    /// the player list; takes window clicks, an anvil name, window close, hotbar slot and snapshot requests.
+    /// the player list; takes window clicks, an anvil name, window close, hotbar slot and snapshot requests, and
+    /// (version 2) drops, using the held item, and clicks and drops on the player inventory while no window is open.
+    /// The host may ask for only some event groups (<see cref="EventsEnvVar"/>).
     ///
     /// It never takes a text command: chat and commands keep going through stdin, built by the host from fixed
     /// templates. It only runs when the host passes both descriptors (MCC_AGENT_FD_OUT, MCC_AGENT_FD_IN), so the
@@ -22,10 +24,69 @@ namespace MinecraftClient.ChatBots
     public sealed class AgentBridge : ChatBot
     {
         /// <summary>Contract version, sent in "hello".</summary>
-        public const int ProtocolVersion = 1;
+        public const int ProtocolVersion = 2;
+
+        /// <summary>
+        /// Comma-separated event groups the host wants (<c>chat</c>, <c>players</c>, <c>inv</c>, <c>win</c>,
+        /// <c>held</c>, <c>pos</c>); the others are not even turned into JSON. Unset: every group.
+        /// </summary>
+        public const string EventsEnvVar = "MCC_AGENT_EVENTS";
+
+        /// <summary>Groups of events a host can ask for; hello, joined, left, ack and err are always written.</summary>
+        [Flags]
+        internal enum EventGroups
+        {
+            None = 0,
+            Chat = 1,
+            Players = 2,
+            Inventory = 4,
+            Windows = 8,
+            Held = 16,
+            Position = 32,
+            All = Chat | Players | Inventory | Windows | Held | Position,
+        }
+
+        /// <summary>The groups <paramref name="value"/> names (unknown names count for nothing); null: all of them.</summary>
+        internal static EventGroups ParseEventGroups(string? value)
+        {
+            if (value is null)
+                return EventGroups.All;
+
+            EventGroups groups = EventGroups.None;
+            foreach (string name in value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                groups |= name switch
+                {
+                    "chat" => EventGroups.Chat,
+                    "players" => EventGroups.Players,
+                    "inv" => EventGroups.Inventory,
+                    "win" => EventGroups.Windows,
+                    "held" => EventGroups.Held,
+                    "pos" => EventGroups.Position,
+                    _ => EventGroups.None,
+                };
+            }
+
+            return groups;
+        }
+
+        private static readonly EventGroups reportedGroups = ParseEventGroups(Environment.GetEnvironmentVariable(EventsEnvVar));
+
+        /// <summary>
+        /// A host that names event groups speaks version 2: window content is reported once a tick, and after the
+        /// bot's own click or drop the client's view is reported even when the server sends nothing. Without it the
+        /// timing is version 1's (an event for every packet).
+        /// </summary>
+        private static readonly bool versionTwoViews = Environment.GetEnvironmentVariable(EventsEnvVar) is not null;
+
+        /// <summary>Ticks (50 ms) the view waits after the bot's own move for the server's answer.</summary>
+        private const int SettleTicks = 3;
 
         private const int MaxOperationsPerSecond = 10;
+        private const int MaxUsesPerSecond = 1;
         private const int MaxOperationsPerTick = 4;
+        private const int FirstPlayerInventorySlot = 5; // armor; 0-4 are the crafting grid and its result
+        private const int LastPlayerInventorySlot = 45; // off hand
         private const int PlayersIntervalTicks = 20;
         private const int PositionIntervalTicks = 20;
         private const int InventoryDebounceTicks = 5;
@@ -41,6 +102,8 @@ namespace MinecraftClient.ChatBots
 
         private readonly AgentBridgeChannel channel = AgentBridgeChannel.Instance;
         private readonly OperationBudget budget = new(MaxOperationsPerSecond);
+        private readonly OperationBudget useBudget = new(MaxUsesPerSecond);
+        private readonly EventGroups reported = reportedGroups;
         private bool active;
         private bool joined;
         private long staleBefore;
@@ -48,6 +111,15 @@ namespace MinecraftClient.ChatBots
         private int closingWindowId = -1;
         private bool inventoryDirty;
         private int inventoryCooldown;
+
+        // The first "inv" of the session: player inventory operations need it, and arrive after it.
+        private bool inventoryReported;
+        private long inventoryReportedArrival;
+
+        // Version 2 views: the open window changed since the last report; no report before this tick.
+        private readonly bool coalesceViews = versionTwoViews;
+        private bool windowDirty;
+        private int settleUntilTick;
         private int ticks;
         private string[] lastPlayers = [];
         private (double X, double Y, double Z, string Dim)? lastPosition;
@@ -74,7 +146,8 @@ namespace MinecraftClient.ChatBots
             }
 
             active = true;
-            ChatClicks.Collecting = true;
+            // Click actions are only collected for the chat events that carry them.
+            ChatClicks.Collecting = Reports(EventGroups.Chat);
 
             if (!helloSent)
             {
@@ -104,6 +177,9 @@ namespace MinecraftClient.ChatBots
             lastPlayers = [];
             lastPosition = null;
             inventoryDirty = true;
+            inventoryReported = false;
+            windowDirty = false;
+            settleUntilTick = 0;
             joined = true;
 
             channel.Emit("joined", writer =>
@@ -120,14 +196,18 @@ namespace MinecraftClient.ChatBots
 
             joined = false;
             window = null;
+            inventoryReported = false;
             DiscardQueuedOperations();
             channel.Emit("left", writer => writer.WriteString("reason", reason.ToString()));
             return false; // reporting only: AutoRelog and the host keep owning reconnects
         }
 
+        /// <summary>The host asked for this group of events (<see cref="EventsEnvVar"/>).</summary>
+        private bool Reports(EventGroups group) => (reported & group) != 0;
+
         public override void OnChatReceived(string text, ChatMessage message)
         {
-            if (!active)
+            if (!active || !Reports(EventGroups.Chat))
                 return;
 
             string type = ChatType(message);
@@ -145,7 +225,7 @@ namespace MinecraftClient.ChatBots
                     {
                         writer.WriteStartArray();
                         writer.WriteStringValue(click.Action);
-                        writer.WriteStringValue(ConsoleIO.KeepOnOneLine(click.Value));
+                        writer.WriteStringValue(AgentBridgeItems.WellFormed(ConsoleIO.KeepOnOneLine(click.Value)));
                         writer.WriteEndArray();
                     }
                 }
@@ -189,20 +269,35 @@ namespace MinecraftClient.ChatBots
             string title = AgentBridgeItems.Plain(container.Title);
             long arrival = channel.LastArrival;
 
-            long seq = channel.Emit("win_open", writer =>
+            // Without window events the window is still tracked (player inventory operations wait for it to close),
+            // but no operation can name it: its "ws" stays 0.
+            long seq = 0;
+            if (Reports(EventGroups.Windows))
             {
-                writer.WriteNumber("id", inventoryId);
-                writer.WriteString("type", type);
-                writer.WriteString("title", title);
-                writer.WriteNumber("size", size);
-                writer.WriteNumber("total", total);
-            });
+                // The title component as the server sent it: custom menus draw their background with font glyphs.
+                byte[]? titleRaw = AgentBridgeItems.RawComponent(container.TitleComponent);
+                seq = channel.Emit("win_open", writer =>
+                {
+                    writer.WriteNumber("id", inventoryId);
+                    writer.WriteString("type", type);
+                    writer.WriteString("title", title);
+                    writer.WriteNumber("size", size);
+                    writer.WriteNumber("total", total);
+                    if (titleRaw is not null)
+                    {
+                        writer.WritePropertyName("titleRaw");
+                        writer.WriteRawValue(titleRaw, skipInputValidation: true);
+                    }
+                });
+            }
 
             window = new OpenWindow(inventoryId, container.Type, seq, arrival, total);
             closingWindowId = -1;
 
             // Some servers send the content before the window: report what is already known.
-            if (container.Items.Count > 0)
+            if (coalesceViews)
+                windowDirty = container.Items.Count > 0;
+            else if (container.Items.Count > 0)
                 SyncWindow(window, container);
         }
 
@@ -214,7 +309,13 @@ namespace MinecraftClient.ChatBots
             if (inventoryId == 0)
                 inventoryDirty = true;
 
-            if (window is not null && inventoryId == window.Id && Handler.GetInventory(inventoryId) is { } container)
+            if (window is null || inventoryId != window.Id)
+                return;
+
+            // A version 2 host gets a burst of slot packets as one change, once a tick (Update).
+            if (coalesceViews)
+                windowDirty = true;
+            else if (Handler.GetInventory(inventoryId) is { } container)
                 SyncWindow(window, container);
         }
 
@@ -234,7 +335,7 @@ namespace MinecraftClient.ChatBots
 
         public override void OnHeldItemChange(byte slot)
         {
-            if (active)
+            if (active && Reports(EventGroups.Held))
                 channel.Emit("held", writer => writer.WriteNumber("slot", slot));
         }
 
@@ -244,6 +345,11 @@ namespace MinecraftClient.ChatBots
                 return;
 
             ticks++;
+            // After the bot's own move, wait a moment for the server's answer (if any) before reporting the view.
+            bool settled = !coalesceViews || ticks >= settleUntilTick;
+            if (settled)
+                FlushWindow(); // before the operations: they see the content the host was told about
+
             if (joined)
                 ExecuteOperations();
             else
@@ -251,16 +357,16 @@ namespace MinecraftClient.ChatBots
 
             if (inventoryCooldown > 0)
                 inventoryCooldown--;
-            if (joined && inventoryDirty && inventoryCooldown == 0)
+            if (joined && inventoryDirty && inventoryCooldown == 0 && settled)
             {
                 inventoryDirty = false;
                 inventoryCooldown = InventoryDebounceTicks;
                 EmitInventory();
             }
 
-            if (joined && ticks % PlayersIntervalTicks == 0)
+            if (joined && ticks % PlayersIntervalTicks == 0 && Reports(EventGroups.Players))
                 CheckPlayers();
-            if (joined && ticks % PositionIntervalTicks == PositionIntervalTicks / 2)
+            if (joined && ticks % PositionIntervalTicks == PositionIntervalTicks / 2 && Reports(EventGroups.Position))
                 CheckPosition();
         }
 
@@ -270,15 +376,45 @@ namespace MinecraftClient.ChatBots
             {
                 string? error = Execute(operation);
                 if (error is null)
+                {
                     channel.Emit("ack", writer =>
                     {
                         if (operation.Id is not null)
                             writer.WriteString("id", operation.Id);
                         writer.WriteString("op", operation.Op);
                     });
+                    if (coalesceViews && operation.Op is AgentOperation.Click or AgentOperation.Drop)
+                        ReportAfterMove(operation);
+                }
                 else
+                {
                     channel.Refuse(operation.Id, operation.Op, error);
+                }
             }
+        }
+
+        /// <summary>
+        /// A version 2 host sees the result of the bot's click or drop: the window and the player inventory are
+        /// reported once the server's answer had <see cref="SettleTicks"/> to arrive, also when it sends none (a
+        /// vanilla server answers a correctly predicted click with silence; the client's view is then the result).
+        /// </summary>
+        private void ReportAfterMove(AgentOperation operation)
+        {
+            if (!operation.OnPlayerInventory)
+                windowDirty = true;
+            inventoryDirty = true;
+            settleUntilTick = ticks + SettleTicks;
+        }
+
+        /// <summary>Report the open window's changes made since the last report (version 2 hosts).</summary>
+        private void FlushWindow()
+        {
+            if (!windowDirty)
+                return;
+
+            windowDirty = false;
+            if (window is not null && Handler.GetInventory(window.Id) is { } container)
+                SyncWindow(window, container);
         }
 
         /// <summary>Carry out one operation; null on success, else the reason it was refused.</summary>
@@ -293,10 +429,8 @@ namespace MinecraftClient.ChatBots
             {
                 case AgentOperation.Click:
                 {
-                    if (CheckWindow(operation) is { } windowError)
-                        return windowError;
-                    if (operation.Slot >= window!.Total)
-                        return "bad_slot";
+                    if (CheckSlot(operation, out int windowId) is { } slotError)
+                        return slotError;
 
                     WindowActionType? action = (operation.Mode, operation.Button) switch
                     {
@@ -309,7 +443,32 @@ namespace MinecraftClient.ChatBots
                     if (action is null)
                         return operation.Mode is "pickup" or "quick_move" ? "bad_button" : "bad_mode";
 
-                    return Handler.DoWindowAction(window.Id, operation.Slot, action.Value) ? null : "send_failed";
+                    return Handler.DoWindowAction(windowId, operation.Slot, action.Value) ? null : "send_failed";
+                }
+
+                case AgentOperation.Drop:
+                {
+                    if (CheckSlot(operation, out int windowId) is { } slotError)
+                        return slotError;
+                    // An item on the cursor first goes back (the host does that); dropping now could lose track of it.
+                    if (Holds(0, -1))
+                        return "bad_state";
+                    if (!Holds(windowId, operation.Slot))
+                        return "empty_slot";
+
+                    // A window click in mode 4: button 0 throws one item, 1 the stack. Never slot -999.
+                    WindowActionType drop = operation.Stack ? WindowActionType.DropItemStack : WindowActionType.DropItem;
+                    return Handler.DoWindowAction(windowId, operation.Slot, drop) ? null : "send_failed";
+                }
+
+                case AgentOperation.Use:
+                {
+                    if (window is not null)
+                        return "window_open";
+                    if (!useBudget.TryTake())
+                        return "rate_limited";
+
+                    return Handler.UseItemOnHand() ? null : "send_failed";
                 }
 
                 case AgentOperation.Rename:
@@ -338,7 +497,8 @@ namespace MinecraftClient.ChatBots
                     if (!Handler.ChangeSlot((short)operation.Slot))
                         return "send_failed";
                     int slot = operation.Slot;
-                    channel.Emit("held", writer => writer.WriteNumber("slot", slot));
+                    if (Reports(EventGroups.Held))
+                        channel.Emit("held", writer => writer.WriteNumber("slot", slot));
                     return null;
                 }
 
@@ -346,10 +506,14 @@ namespace MinecraftClient.ChatBots
                 {
                     if (operation.What == "inv")
                     {
+                        if (!Reports(EventGroups.Inventory))
+                            return "masked";
                         EmitInventory();
                         return null;
                     }
 
+                    if (!Reports(EventGroups.Windows))
+                        return "masked";
                     if (window is null || Handler.GetInventory(window.Id) is not { } container)
                         return "no_window";
 
@@ -359,6 +523,55 @@ namespace MinecraftClient.ChatBots
             }
 
             return "unknown_op";
+        }
+
+        /// <summary>
+        /// The window and slot a click or drop acts on: the open window's (as in version 1), or the player inventory's
+        /// while no window is open (<c>win: 0, ws: 0</c>, slots 5-45). Null when the slot may be used.
+        /// </summary>
+        private string? CheckSlot(AgentOperation operation, out int windowId)
+        {
+            windowId = 0;
+            if (operation.OnPlayerInventory)
+                return PlayerInventoryRefusal(operation, window is not null, GetInventoryEnabled(), inventoryReported,
+                    inventoryReportedArrival);
+
+            if (CheckWindow(operation) is { } windowError)
+                return windowError;
+            if (operation.Slot >= window!.Total)
+                return "bad_slot";
+
+            windowId = window.Id;
+            return null;
+        }
+
+        /// <summary>
+        /// Why a click or drop on the player inventory (<c>win: 0, ws: 0</c>) may not run now, or null: no window may
+        /// be open, the session's first <c>inv</c> must have been written and the operation sent after it, and only the
+        /// armor, main, hotbar and off hand slots (5-45) are taken.
+        /// </summary>
+        internal static string? PlayerInventoryRefusal(AgentOperation operation, bool windowOpen, bool inventoryEnabled,
+            bool inventoryReported, long inventoryReportedArrival)
+        {
+            if (windowOpen)
+                return "wrong_window";
+            if (!inventoryEnabled)
+                return "inventory_disabled";
+            if (!inventoryReported)
+                return "not_ready";
+            if (operation.Arrival <= inventoryReportedArrival)
+                return "stale";
+            if (operation.Slot is < FirstPlayerInventorySlot or > LastPlayerInventorySlot)
+                return "bad_slot";
+            return null;
+        }
+
+        /// <summary>The client sees an item in that slot of that window (slot -1 of window 0: the cursor).</summary>
+        private bool Holds(int windowId, int slot)
+        {
+            return Handler.GetInventory(windowId) is { } container
+                   && container.Items.TryGetValue(slot, out Item? item)
+                   && item is { IsEmpty: false };
         }
 
         /// <summary>The operation names the open window: right id, right "ws", sent after the window opened.</summary>
@@ -387,6 +600,9 @@ namespace MinecraftClient.ChatBots
 
         private void SyncWindow(OpenWindow open, Container container)
         {
+            if (!Reports(EventGroups.Windows))
+                return;
+
             Dictionary<int, string> current = new();
             foreach ((int slot, Item item) in container.Items)
             {
@@ -460,6 +676,9 @@ namespace MinecraftClient.ChatBots
 
         private void EmitWindowClose(int id, string by)
         {
+            if (!Reports(EventGroups.Windows))
+                return;
+
             channel.Emit("win_close", writer =>
             {
                 writer.WriteNumber("id", id);
@@ -469,7 +688,7 @@ namespace MinecraftClient.ChatBots
 
         private void EmitInventory()
         {
-            if (!GetInventoryEnabled() || Handler.GetInventory(0) is not { } inventory)
+            if (!Reports(EventGroups.Inventory) || !GetInventoryEnabled() || Handler.GetInventory(0) is not { } inventory)
                 return;
 
             List<KeyValuePair<int, Item>> items = inventory.Items
@@ -480,7 +699,8 @@ namespace MinecraftClient.ChatBots
             Item? carried = cursor is { IsEmpty: false } ? cursor : null;
             byte held = GetCurrentSlot();
 
-            channel.Emit("inv", writer =>
+            long arrival = channel.LastArrival;
+            long seq = channel.Emit("inv", writer =>
             {
                 writer.WriteNumber("held", held);
                 writer.WriteStartArray("items");
@@ -493,6 +713,13 @@ namespace MinecraftClient.ChatBots
                 else
                     AgentBridgeItems.Write(writer, null, carried);
             });
+
+            // Player inventory operations wait for the session's first view of it and must have been sent after it.
+            if (seq > 0 && !inventoryReported)
+            {
+                inventoryReported = true;
+                inventoryReportedArrival = arrival;
+            }
         }
 
         private void CheckPlayers()

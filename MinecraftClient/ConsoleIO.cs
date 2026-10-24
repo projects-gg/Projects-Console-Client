@@ -212,6 +212,13 @@ namespace MinecraftClient
         /// </summary>
         public static void WriteLine(string line)
         {
+            if (ChatBots.ConsoleKinds.Enabled)
+            {
+                // The host reads every write as an event that says where it came from.
+                ChatBots.ConsoleKinds.WriteConsole(line);
+                return;
+            }
+
             if (BasicIO || Backend is null)
                 Console.WriteLine(OneLinePerWrite ? KeepOnOneLine(line) : line);
             else
@@ -240,6 +247,13 @@ namespace MinecraftClient
                 {
                     int hour = DateTime.Now.Hour, minute = DateTime.Now.Minute, second = DateTime.Now.Second;
                     output.Append(String.Format("{0}:{1}:{2} ", hour.ToString("00"), minute.ToString("00"), second.ToString("00")));
+                }
+                if (ChatBots.ConsoleKinds.Enabled)
+                {
+                    // The host reads every write as an event that says where it came from.
+                    output.Append(str);
+                    ChatBots.ConsoleKinds.WriteConsole(output.ToString());
+                    return;
                 }
                 if (!acceptnewlines && !OneLinePerWrite)
                 {
