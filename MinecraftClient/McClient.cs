@@ -621,6 +621,8 @@ namespace MinecraftClient
                 BotLoad(new FileInputBot());
             if (LauncherBridge.Enabled)
                 BotLoad(new LauncherBridge());
+            if (AgentBridge.Enabled)
+                BotLoad(new AgentBridge());
         }
 
         /// <summary>
@@ -3370,6 +3372,23 @@ namespace MinecraftClient
         }
 
         /// <summary>
+        /// Type an item name into the given anvil window. Unlike <see cref="SendRenameItem(string)"/> it does
+        /// not rely on the order of the known windows: the window must be open and be an anvil.
+        /// </summary>
+        /// <param name="windowId">The anvil window</param>
+        /// <param name="itemName">The new item name</param>
+        public bool SendRenameItemInWindow(int windowId, string itemName)
+        {
+            if (InvokeRequired)
+                return InvokeOnMainThread(() => SendRenameItemInWindow(windowId, itemName));
+
+            if (!inventories.TryGetValue(windowId, out Container? window) || window.Type != ContainerType.Anvil)
+                return false;
+
+            return handler.SendRenameItem(itemName);
+        }
+
+        /// <summary>
         /// Send a recipe book craft request for the currently active crafting inventory.
         /// </summary>
         /// <param name="recipeId">Recipe identifier to craft</param>
@@ -3865,6 +3884,34 @@ namespace MinecraftClient
 
             DispatchBotEvent(bot => bot.GetText(messageText));
             DispatchBotEvent(bot => bot.GetText(messageText, message.content));
+            DispatchChatReceived(messageText, message);
+        }
+
+        /// <summary>
+        /// Received a message that the console does not show (hidden by settings, or an action bar).
+        /// </summary>
+        /// <param name="message">Message received</param>
+        public void OnTextObserved(ChatMessage message)
+        {
+            string messageText;
+            if (message.isSignedChat)
+                messageText = ChatParser.ParseSignedChat(message);
+            else
+                messageText = message.isJson ? ChatParser.ParseText(message.content) : message.content;
+
+            DispatchChatReceived(messageText, message);
+        }
+
+        private void DispatchChatReceived(string messageText, ChatMessage message)
+        {
+            // Formats older than 1.19.3 carry the components as JSON in the message itself.
+            if (ChatClicks.Collecting && message.clicks is null && message.isJson)
+            {
+                message.clicks = new();
+                ChatClicks.CollectJson(message.content, message.clicks);
+            }
+
+            DispatchBotEvent(bot => bot.OnChatReceived(messageText, message));
         }
 
         /// <summary>

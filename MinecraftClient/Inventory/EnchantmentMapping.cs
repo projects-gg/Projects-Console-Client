@@ -322,11 +322,26 @@ namespace MinecraftClient.Inventory
 
         public static Enchantments GetEnchantmentByRegistryId1206(int protocolVersion, int id)
         {
-            if (dynamicEnchantmentIdMap is not null && dynamicEnchantmentIdMap.TryGetValue(id, out var dynValue))
-                return dynValue;
+            if (dynamicEnchantmentIdMap is not null)
+            {
+                // The server sent its own enchantment registry: an id it does not name as a vanilla
+                // enchantment is a custom one, never the vanilla enchantment that has this id by default.
+                return dynamicEnchantmentIdMap.TryGetValue(id, out var dynValue) ? dynValue : (Enchantments)(-1);
+            }
             if (GetMapForProtocolVersion(protocolVersion).TryGetValue((short)id, out var value))
                 return value;
             return (Enchantments)(-1);
+        }
+
+        private static Dictionary<Enchantments, string>? enchantmentToName;
+
+        /// <summary>
+        /// Registry name of a vanilla enchantment ("minecraft:sharpness"), or null for an unknown one.
+        /// </summary>
+        public static string? GetEnchantmentRegistryName(Enchantments enchantment)
+        {
+            enchantmentToName ??= nameToEnchantment.ToDictionary(entry => entry.Value, entry => "minecraft:" + entry.Key);
+            return enchantmentToName.TryGetValue(enchantment, out var name) ? name : null;
         }
 
         public static int GetRegistryId1206ByEnchantment(int protocolVersion, Enchantments enchantment)

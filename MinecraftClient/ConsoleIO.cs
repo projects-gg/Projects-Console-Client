@@ -167,12 +167,53 @@ namespace MinecraftClient
         }
 
         /// <summary>
+        /// Set when a host reads stdout line by line (<see cref="ChatBots.LauncherBridge"/>): every write then stays
+        /// on one stdout line, so text from a server (a kick message, a window title, chat) can never start a line
+        /// of its own and pass for a bridge event.
+        /// </summary>
+        internal static bool OneLinePerWrite { get; set; } =
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ChatBots.LauncherBridge.EnableEnvVar));
+
+        private static readonly char[] LineBreakChars = ['\r', '\n', '\u000B', '\u000C', '\u0085', '\u2028', '\u2029'];
+
+        /// <summary>
+        /// Turn every line break in <paramref name="text"/> into "⏎" (CR LF counts as one).
+        /// </summary>
+        public static string KeepOnOneLine(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.IndexOfAny(LineBreakChars) < 0)
+                return text;
+
+            StringBuilder result = new(text.Length);
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '\r')
+                {
+                    if (i + 1 < text.Length && text[i + 1] == '\n')
+                        i++;
+                    result.Append('⏎');
+                }
+                else if (Array.IndexOf(LineBreakChars, c) >= 0)
+                {
+                    result.Append('⏎');
+                }
+                else
+                {
+                    result.Append(c);
+                }
+            }
+
+            return result.ToString();
+        }
+
+        /// <summary>
         /// Write a string to the standard output with a trailing newline
         /// </summary>
         public static void WriteLine(string line)
         {
             if (BasicIO || Backend is null)
-                Console.WriteLine(line);
+                Console.WriteLine(OneLinePerWrite ? KeepOnOneLine(line) : line);
             else
                 Backend.WriteLine(line);
         }
@@ -200,7 +241,7 @@ namespace MinecraftClient
                     int hour = DateTime.Now.Hour, minute = DateTime.Now.Minute, second = DateTime.Now.Second;
                     output.Append(String.Format("{0}:{1}:{2} ", hour.ToString("00"), minute.ToString("00"), second.ToString("00")));
                 }
-                if (!acceptnewlines)
+                if (!acceptnewlines && !OneLinePerWrite)
                 {
                     str = str.Replace('\n', ' ');
                 }
@@ -214,7 +255,7 @@ namespace MinecraftClient
                     {
                         output.Append(str);
                     }
-                    Console.WriteLine(output.ToString());
+                    Console.WriteLine(OneLinePerWrite ? KeepOnOneLine(output.ToString()) : output.ToString());
                     return;
                 }
                 output.Append(str);

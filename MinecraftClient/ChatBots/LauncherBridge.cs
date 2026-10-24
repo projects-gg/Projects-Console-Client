@@ -14,13 +14,43 @@ namespace MinecraftClient.ChatBots
     ///
     /// Activated by the <see cref="EnableEnvVar"/> environment variable rather than a TOML
     /// section: hosting is a property of how MCC was launched, not of the account's config.
+    ///
+    /// Text from a server cannot pass for an event: while hosted, every console write stays on one
+    /// stdout line (<see cref="ConsoleIO.OneLinePerWrite"/>), and a host that sets
+    /// <see cref="NonceEnvVar"/> only trusts lines that start with its nonce (docs/agent-bridge.md).
     /// </summary>
     public class LauncherBridge : ChatBot
     {
         public const string EnableEnvVar = "MCC_LAUNCHER_BRIDGE";
 
+        /// <summary>
+        /// Optional per-process secret from the host. When set, every event line starts with it, directly followed by
+        /// <see cref="Prefix"/>: a line without it did not come from this bridge. Must match
+        /// <c>^[A-Za-z0-9_-]{16,128}$</c>; any other value is ignored.
+        /// </summary>
+        public const string NonceEnvVar = "MCC_BRIDGE_NONCE";
+
         /// <summary>Line marker the host greps for. Anything else on stdout is human-readable log text.</summary>
         public const string Prefix = "@@MCC@@";
+
+        /// <summary>What starts every event line of this process: the host's nonce (if any) and <see cref="Prefix"/>.</summary>
+        internal static readonly string LinePrefix = BuildLinePrefix(Environment.GetEnvironmentVariable(NonceEnvVar));
+
+        internal static string BuildLinePrefix(string? nonce) => IsValidNonce(nonce) ? nonce + Prefix : Prefix;
+
+        internal static bool IsValidNonce(string? nonce)
+        {
+            if (nonce is null || nonce.Length is < 16 or > 128)
+                return false;
+
+            foreach (char c in nonce)
+            {
+                if (!(char.IsAsciiLetterOrDigit(c) || c is '_' or '-'))
+                    return false;
+            }
+
+            return true;
+        }
 
         /// <summary>Update() runs at 20 TPS; poll the tab list once per second instead.</summary>
         private const int StatusIntervalTicks = 20;
@@ -57,7 +87,8 @@ namespace MinecraftClient.ChatBots
             string line;
             try
             {
-                line = Prefix + JsonSerializer.Serialize(payload, jsonOptions);
+                // JSON escapes every line break, so the event is always exactly one stdout line.
+                line = LinePrefix + JsonSerializer.Serialize(payload, jsonOptions);
             }
             catch (Exception)
             {

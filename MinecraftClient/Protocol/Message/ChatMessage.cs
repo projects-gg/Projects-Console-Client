@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace MinecraftClient.Protocol.Message
 {
@@ -34,6 +35,23 @@ namespace MinecraftClient.Protocol.Message
         public byte[]? signature;
 
         public bool? isSignatureLegal;
+
+        /// <summary>
+        /// Shown above the hotbar (action bar) rather than in the chat box.
+        /// </summary>
+        public bool isOverlay;
+
+        /// <summary>
+        /// 1.19.3+ chat sent without a player profile ("disguised" chat): a chat line decorated with a chat type
+        /// and a sender name, but not a plain system message.
+        /// </summary>
+        public bool isProfileless;
+
+        /// <summary>
+        /// Click actions of the message's components, in document order. Only collected while
+        /// <see cref="ChatClicks.Collecting"/> is set; null otherwise.
+        /// </summary>
+        public List<ChatClick>? clicks;
 
         internal ChatParser.ChatTypeDecoration? chatTypeDecoration;
 

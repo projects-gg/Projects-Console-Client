@@ -439,13 +439,34 @@ namespace MinecraftClient.Protocol.Handlers
                 strcturedComponentsToAdd.Add(structuredComponentHandler.Parse(componentTypeId, cache));
             }
 
-            for (var i = 0; i < numberofComponentsToRemove; i++)
-                ReadNextVarInt(cache);
+            item.RemovedComponents = ReadRemovedComponents(cache, numberofComponentsToRemove, structuredComponentHandler);
 
             if (strcturedComponentsToAdd.Count > 0)
                 item.Components = strcturedComponentsToAdd;
 
             return item;
+        }
+
+        /// <summary>
+        /// Read the ids of the default components an item stack removes (its patch's "remove" list) and name them.
+        /// A removed default (for example an elytra without "minecraft:glider") changes what the item does
+        /// while its id, name and look stay the same, so callers that judge items need the list.
+        /// </summary>
+        private List<string>? ReadRemovedComponents(Queue<byte> cache, int count,
+            StructuredComponentsHandler structuredComponentHandler)
+        {
+            if (count <= 0)
+                return null;
+
+            List<string> removed = new(count);
+            for (var i = 0; i < count; i++)
+            {
+                var componentTypeId = ReadNextVarInt(cache);
+                var name = structuredComponentHandler.GetComponentName(componentTypeId);
+                removed.Add(name == "<unknown>" ? $"#{componentTypeId}" : name);
+            }
+
+            return removed;
         }
 
         /// <summary>
@@ -498,8 +519,8 @@ namespace MinecraftClient.Protocol.Handlers
                         }
                     }
 
-                    for (var i = 0; i < numberofComponentsToRemove; i++)
-                        ReadNextVarInt(cache);
+                    item.RemovedComponents = ReadRemovedComponents(cache, numberofComponentsToRemove,
+                        structuredComponentHandler);
 
                     if (strcturedComponentsToAdd.Count > 0)
                         item.Components = strcturedComponentsToAdd;
@@ -1471,6 +1492,16 @@ namespace MinecraftClient.Protocol.Handlers
 
         public string ReadNextChat(Queue<byte> cache)
         {
+            return ReadNextChat(cache, null);
+        }
+
+        /// <summary>
+        /// Read a text component and render it as formatted text.
+        /// </summary>
+        /// <param name="cache">Packet data</param>
+        /// <param name="clicks">When not null, receives the component's click actions</param>
+        public string ReadNextChat(Queue<byte> cache, List<ChatClick>? clicks)
+        {
             if (protocolversion >= Protocol18Handler.MC_1_20_4_Version)
             {
                 // Vanilla 1.20.4+ uses NBT here, but Hypixel exposed a JSON-string fallback on the same path.
@@ -1478,6 +1509,8 @@ namespace MinecraftClient.Protocol.Handlers
                 try
                 {
                     var r = ReadNextNbt(cache);
+                    if (clicks is not null)
+                        ChatClicks.Collect(r, clicks);
                     return ChatParser.ParseText(r);
                 }
                 catch (System.IO.InvalidDataException)
@@ -1490,6 +1523,8 @@ namespace MinecraftClient.Protocol.Handlers
 
             // Read as String
             var json = ReadNextString(cache);
+            if (clicks is not null)
+                ChatClicks.CollectJson(json, clicks);
             return ChatParser.ParseText(json);
         }
 
