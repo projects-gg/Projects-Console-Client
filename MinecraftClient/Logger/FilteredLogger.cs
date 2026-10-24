@@ -83,7 +83,11 @@ namespace MinecraftClient.Logger
         public override void Error(string msg)
         {
             if (ErrorEnabled)
-                Log("§c[ERROR] " + msg);
+            {
+                // With console kinds on, the host sees these lines as the client's errors.
+                using (ChatBots.ConsoleKinds.Source(ChatBots.ConsoleKinds.SourceError))
+                    Log("§c[ERROR] " + msg);
+            }
         }
 
         public override void Chat(string msg)

@@ -689,7 +689,7 @@ namespace MinecraftClient.Scripting
         /// <param name="message">if it's a private message, this will contain the message</param>
         /// <param name="sender">if it's a private message, this will contain the player name that sends the message</param>
         /// <returns>Returns true if the text is a private message</returns>
-        protected static bool IsPrivateMessage(string text, ref string message, ref string sender)
+        protected internal static bool IsPrivateMessage(string text, ref string message, ref string sender)
         {
             if (string.IsNullOrEmpty(text))
                 return false;
@@ -800,7 +800,7 @@ namespace MinecraftClient.Scripting
         /// <param name="message">if it's message, this will contain the message</param>
         /// <param name="sender">if it's message, this will contain the player name that sends the message</param>
         /// <returns>Returns true if the text is a chat message</returns>
-        protected static bool IsChatMessage(string text, ref string message, ref string sender)
+        protected internal static bool IsChatMessage(string text, ref string message, ref string sender)
         {
             if (string.IsNullOrEmpty(text))
                 return false;

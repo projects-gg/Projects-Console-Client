@@ -27,9 +27,28 @@ namespace MinecraftClient.ChatBots
         private readonly Dictionary<string, object>? localVars;
         private readonly string? scriptOwnerKey;
 
+        /// <summary>
+        /// The variables are an auto-reply's strict values: a <c>send</c> line that they make longer than one chat
+        /// message is not sent, so a value's length never decides where a long line is split (a part starting with
+        /// "/" would run as a command).
+        /// </summary>
+        internal bool FilledReplies { get; init; }
+
         public Script(string filename)
         {
             ParseArguments(filename);
+        }
+
+        /// <summary>
+        /// A filled <c>send</c> line too long for one chat message: at most
+        /// <see cref="AutoRespond.MaxFilledReplyLength"/> and the server's limit.
+        /// </summary>
+        internal static bool IsOverlongReply(string instruction, int maxChatLength)
+        {
+            if (!instruction.StartsWith("send ", StringComparison.OrdinalIgnoreCase))
+                return false;
+            int limit = Math.Min(AutoRespond.MaxFilledReplyLength, maxChatLength);
+            return instruction.Length - "send ".Length > limit;
         }
 
         public Script(string filename, string? ownername, Dictionary<string, object>? localVars)
@@ -212,6 +231,12 @@ namespace MinecraftClient.ChatBots
                             if (instruction_line[0] != '#' && instruction_line[0] != '/' && instruction_line[1] != '/')
                             {
                                 instruction_line = Settings.Config.AppVar.ExpandVars(instruction_line, localVars);
+                                if (FilledReplies && IsOverlongReply(instruction_line, GetMaxChatMessageLength()))
+                                {
+                                    LogToConsole(Translations.bot_script_reply_too_long);
+                                    return;
+                                }
+
                                 string instruction_name = instruction_line.Split(' ')[0];
                                 switch (instruction_name.ToLower())
                                 {

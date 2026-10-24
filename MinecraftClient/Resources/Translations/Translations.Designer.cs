@@ -844,6 +844,24 @@ namespace MinecraftClient {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Reply not sent: names and parts may only be letters, digits and underscores ({0})..
+        /// </summary>
+        internal static string bot_autoRespond_vars_refused {
+            get {
+                return ResourceManager.GetString("bot.autoRespond.vars_refused", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to This rule&apos;s values cannot be checked, so the rule is off: {0}.
+        /// </summary>
+        internal static string bot_autoRespond_vars_unusable {
+            get {
+                return ResourceManager.GetString("bot.autoRespond.vars_unusable", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Path &apos;{0}&apos; contains invalid characters..
         /// </summary>
         internal static string bot_chatLog_invalid_file {
@@ -1634,6 +1652,15 @@ namespace MinecraftClient {
         internal static string bot_script_pm_loaded {
             get {
                 return ResourceManager.GetString("bot.script.pm.loaded", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Reply not sent: with its values it does not fit in one chat message..
+        /// </summary>
+        internal static string bot_script_reply_too_long {
+            get {
+                return ResourceManager.GetString("bot.script.reply_too_long", resourceCulture);
             }
         }
 

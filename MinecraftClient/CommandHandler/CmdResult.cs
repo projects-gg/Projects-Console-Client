@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace MinecraftClient.CommandHandler
 {
@@ -28,6 +29,12 @@ namespace MinecraftClient.CommandHandler
         public Status status;
 
         public string? result;
+
+        /// <summary>
+        /// Strict values of an auto-reply (AutoRespond with MCC_MATCH_VARS=strict): the only variables the script
+        /// started by this command gets, every one checked. Null for every other command.
+        /// </summary>
+        internal Dictionary<string, object>? ScriptVariables { get; init; }
 
         public int SetAndReturn(Status status)
         {

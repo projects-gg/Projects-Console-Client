@@ -382,6 +382,12 @@ cooldown: {6}</value>
   <data name="bot.autoRespond.regex_turned_off" xml:space="preserve">
     <value>Kural sürekli çok uzun sürdüğü için sonraki bağlantıya kadar kapatıldı: {0}</value>
   </data>
+  <data name="bot.autoRespond.vars_refused" xml:space="preserve">
+    <value>Yanıt gönderilmedi: ad ve parçalar yalnız harf, rakam ve alt çizgi olabilir ({0}).</value>
+  </data>
+  <data name="bot.autoRespond.vars_unusable" xml:space="preserve">
+    <value>Bu kuralın değerleri denetlenemiyor, kural kapalı: {0}</value>
+  </data>
   <data name="bot.chatLog.invalid_file" xml:space="preserve">
     <value>'{0}' yolu geçersiz karakterler içeriyor.</value>
   </data>
@@ -644,6 +650,9 @@ cooldown: {6}</value>
   </data>
   <data name="bot.script.pm.loaded" xml:space="preserve">
     <value>'{0}' betiği yüklendi.</value>
+  </data>
+  <data name="bot.script.reply_too_long" xml:space="preserve">
+    <value>Yanıt gönderilmedi: değerleriyle birlikte tek sohbet mesajına sığmıyor.</value>
   </data>
   <data name="script.compile.error" xml:space="preserve">
     <value>{0} içinde {1}. satır, {2}. sütunda hata: [{3}] {4}</value>

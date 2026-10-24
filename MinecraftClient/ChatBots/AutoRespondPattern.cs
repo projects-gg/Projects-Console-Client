@@ -59,6 +59,26 @@ namespace MinecraftClient.ChatBots
         internal bool IsTurnedOff => timeouts >= TimeoutLimit;
 
         /// <summary>
+        /// The pattern has a named group. .NET numbers named groups after the unnamed ones, so a group number of
+        /// such a pattern can mean another group than in Rust or JavaScript, which count every group by its opening
+        /// parenthesis.
+        /// </summary>
+        internal bool HasNamedGroups
+        {
+            get
+            {
+                foreach (string name in backtracking.GetGroupNames())
+                {
+                    if (!int.TryParse(name, System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out _))
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Builds a rule's regex with .NET's default options (case-sensitive unless the pattern says
         /// <c>(?i)</c>), as AutoRespond always has. Fails only when <paramref name="pattern"/> is not a
         /// valid .NET regex.

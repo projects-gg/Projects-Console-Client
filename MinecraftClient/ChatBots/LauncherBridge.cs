@@ -95,6 +95,15 @@ namespace MinecraftClient.ChatBots
                 return; // a status event is never worth taking the session down for
             }
 
+            WriteEventLine(line);
+        }
+
+        /// <summary>
+        /// Write one finished event line (<see cref="LinePrefix"/> and JSON) to stdout. Shared with the console kinds,
+        /// so two events never interleave.
+        /// </summary>
+        internal static void WriteEventLine(string line)
+        {
             lock (writeLock)
             {
                 Console.Out.WriteLine(line);

@@ -3876,7 +3876,10 @@ namespace MinecraftClient
                     messageText = message.content;
             }
 
-            Log.Chat(color + messageText);
+            if (ChatBots.ConsoleKinds.Enabled)
+                ChatBots.ConsoleKinds.WriteChat(message, messageText, ListedPlayerName); // where it came from, unmarked
+            else
+                Log.Chat(color + messageText);
 
             if (Config.Main.Advanced.ShowChatLinks)
                 foreach (string link in links)
@@ -3899,8 +3902,15 @@ namespace MinecraftClient
             else
                 messageText = message.isJson ? ChatParser.ParseText(message.content) : message.content;
 
+            // The console settings hide nothing from the console kinds.
+            if (ChatBots.ConsoleKinds.Enabled)
+                ChatBots.ConsoleKinds.WriteChat(message, messageText, ListedPlayerName);
+
             DispatchChatReceived(messageText, message);
         }
+
+        /// <summary>The tab list name of a player, if the client knows the UUID.</summary>
+        private string? ListedPlayerName(Guid uuid) => GetPlayerInfo(uuid)?.Name;
 
         private void DispatchChatReceived(string messageText, ChatMessage message)
         {
@@ -4734,6 +4744,14 @@ namespace MinecraftClient
         /// <param name="json"> json text</param>
         public void OnTitle(int action, string titletext, string subtitletext, string actionbartext, int fadein, int stay, int fadeout, string json)
         {
+            if (ChatBots.ConsoleKinds.Enabled)
+            {
+                // The console never printed titles; with console kinds the host gets them (and this action bar).
+                ChatBots.ConsoleKinds.WriteTitle(false, titletext);
+                ChatBots.ConsoleKinds.WriteTitle(true, subtitletext);
+                ChatBots.ConsoleKinds.WriteActionBar(actionbartext);
+            }
+
             DispatchBotEvent(bot => bot.OnTitle(action, titletext, subtitletext, actionbartext, fadein, stay, fadeout, json));
         }
 

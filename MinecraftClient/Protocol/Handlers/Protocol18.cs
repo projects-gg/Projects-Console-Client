@@ -1031,12 +1031,15 @@ namespace MinecraftClient.Protocol.Handlers
                         var message = dataTypes.ReadNextString(packetData);
 
                         Guid senderUuid;
+                        var hiddenLegacy = false;
                         if (protocolVersion >= MC_1_8_Version)
                         {
                             //Hide system messages or xp bar messages?
                             messageType = dataTypes.ReadNextByte(packetData);
-                            if (messageType == 1 && !Config.Main.Advanced.ShowSystemMessages
-                                || messageType == 2 && !Config.Main.Advanced.ShowSystemMessages)
+                            hiddenLegacy = messageType == 1 && !Config.Main.Advanced.ShowSystemMessages
+                                           || messageType == 2 && !Config.Main.Advanced.ShowSystemMessages;
+                            // The console kinds still get hidden lines (the host decides what to show).
+                            if (hiddenLegacy && !ChatBots.ConsoleKinds.Enabled)
                                 break;
 
                             senderUuid = protocolVersion >= MC_1_16_5_Version
@@ -1046,7 +1049,11 @@ namespace MinecraftClient.Protocol.Handlers
                         else
                             senderUuid = Guid.Empty;
 
-                        handler.OnTextReceived(new(message, null, true, messageType, senderUuid));
+                        ChatMessage legacyChat = new(message, null, true, messageType, senderUuid);
+                        if (hiddenLegacy)
+                            handler.OnTextObserved(legacyChat);
+                        else
+                            handler.OnTextReceived(legacyChat);
                     }
                     else if (protocolVersion == MC_1_19_Version) // 1.19
                     {
@@ -1055,8 +1062,10 @@ namespace MinecraftClient.Protocol.Handlers
                         var unsignedChatContent = hasUnsignedChatContent ? dataTypes.ReadNextString(packetData) : null;
 
                         messageType = dataTypes.ReadNextVarInt(packetData);
-                        if (messageType == 1 && !Config.Main.Advanced.ShowSystemMessages
-                            || messageType == 2 && !Config.Main.Advanced.ShowXPBarMessages)
+                        var hidden119 = messageType == 1 && !Config.Main.Advanced.ShowSystemMessages
+                                        || messageType == 2 && !Config.Main.Advanced.ShowXPBarMessages;
+                        // The console kinds still get hidden lines (the host decides what to show).
+                        if (hidden119 && !ChatBots.ConsoleKinds.Enabled)
                             break;
 
                         var senderUuid = dataTypes.ReadNextUUID(packetData);
@@ -1084,7 +1093,10 @@ namespace MinecraftClient.Protocol.Handlers
 
                         ChatMessage chat = new(signedChat, true, messageType, senderUuid, unsignedChatContent,
                             senderDisplayName, senderTeamName, timestamp, messageSignature, verifyResult);
-                        handler.OnTextReceived(chat);
+                        if (hidden119)
+                            handler.OnTextObserved(chat);
+                        else
+                            handler.OnTextReceived(chat);
                     }
                     else if (protocolVersion == MC_1_19_2_Version)
                     {
@@ -1357,9 +1369,16 @@ namespace MinecraftClient.Protocol.Handlers
                     else
                     {
                         var msgType = dataTypes.ReadNextVarInt(packetData);
+                        ChatMessage systemChat119 = new(systemMessage, null, true, msgType, Guid.Empty, true);
                         if (msgType == 1 && !Config.Main.Advanced.ShowSystemMessages)
+                        {
+                            // The console kinds still get hidden lines (the host decides what to show).
+                            if (ChatBots.ConsoleKinds.Enabled)
+                                handler.OnTextObserved(systemChat119);
                             break;
-                        handler.OnTextReceived(new(systemMessage, null, true, msgType, Guid.Empty, true));
+                        }
+
+                        handler.OnTextReceived(systemChat119);
                     }
 
                     break;
@@ -1383,8 +1402,9 @@ namespace MinecraftClient.Protocol.Handlers
                     handler.OnTextReceived(profilelessChat);
                     break;
                 case PacketTypesIn.ActionBar:
-                    // Never shown in the console (unchanged); only bots that observe every line get it.
-                    if (ChatClicks.Collecting)
+                    // Never shown in the console (unchanged); only bots that observe every line, and the console
+                    // kinds, get it.
+                    if (ChatClicks.Collecting || ChatBots.ConsoleKinds.Enabled)
                     {
                         var actionBarClicks = new List<ChatClick>();
                         var actionBarText = dataTypes.ReadNextChat(packetData, actionBarClicks);
@@ -1980,6 +2000,20 @@ namespace MinecraftClient.Protocol.Handlers
                     }
 
                     break;
+                case PacketTypesIn.SetTitleText:
+                    // 1.17+: titles come in packets of their own. Read only for the console kinds.
+                    if (ChatBots.ConsoleKinds.Enabled)
+                        ChatBots.ConsoleKinds.WriteTitle(false, dataTypes.ReadNextChat(packetData));
+                    break;
+                case PacketTypesIn.SetTitleSubTitle:
+                    if (ChatBots.ConsoleKinds.Enabled)
+                        ChatBots.ConsoleKinds.WriteTitle(true, dataTypes.ReadNextChat(packetData));
+                    break;
+                case PacketTypesIn.BossBar:
+                    // Read only for the console kinds (the client keeps no boss bars of its own).
+                    if (ChatBots.ConsoleKinds.Enabled)
+                        ChatBots.ConsoleKinds.WriteBoss(ReadBossBarPacket(dataTypes, packetData));
+                    break;
                 case PacketTypesIn.MultiBlockChange:
                     if (handler.GetTerrainEnabled())
                     {
@@ -2471,9 +2505,12 @@ namespace MinecraftClient.Protocol.Handlers
                                 .ToUpper();
                             var inventoryType =
                                 (ContainerTypeOld)Enum.Parse(typeof(ContainerTypeOld), type);
-                            var title = dataTypes.ReadNextChat(packetData);
+                            var title = dataTypes.ReadNextChat(packetData, null, out var titleComponent);
                             var slots = dataTypes.ReadNextByte(packetData);
-                            Container inventory = new(windowId, inventoryType, ChatParser.ParseText(title));
+                            Container inventory = new(windowId, inventoryType, ChatParser.ParseText(title))
+                            {
+                                TitleComponent = titleComponent
+                            };
                             handler.OnInventoryOpen(windowId, inventory);
                         }
                         else
@@ -2481,8 +2518,12 @@ namespace MinecraftClient.Protocol.Handlers
                             // MC 1.14 or greater
                             var windowId = dataTypes.ReadNextVarInt(packetData);
                             var windowType = dataTypes.ReadNextVarInt(packetData);
-                            var title = dataTypes.ReadNextChat(packetData);
-                            Container inventory = new(windowId, windowType, ChatParser.ParseText(title), protocolVersion);
+                            var title = dataTypes.ReadNextChat(packetData, null, out var titleComponent);
+                            Container inventory = new(windowId, windowType, ChatParser.ParseText(title), protocolVersion)
+                            {
+                                // Kept as sent: custom menus draw their background with resource pack font glyphs.
+                                TitleComponent = titleComponent
+                            };
                             handler.OnInventoryOpen(windowId, inventory);
                         }
                     }
@@ -6766,6 +6807,45 @@ namespace MinecraftClient.Protocol.Handlers
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Read a boss bar packet (1.9+, the same fields in every version; the title is a text component, JSON before
+        /// 1.20.3 and NBT after) as the console kinds report it. Null for the changes they do not report (flags) and
+        /// for an unknown action.
+        /// </summary>
+        internal static ChatBots.BossBarEvent? ReadBossBarPacket(DataTypes dataTypes, Queue<byte> packetData)
+        {
+            // UUID, action; add: title, health (float), color, division, flags; remove: nothing; 2: health;
+            // 3: title; 4: color, division; 5: flags.
+            Guid id = dataTypes.ReadNextUUID(packetData);
+            int action = dataTypes.ReadNextVarInt(packetData);
+            switch (action)
+            {
+                case 0:
+                {
+                    string title = dataTypes.ReadNextChat(packetData);
+                    float health = dataTypes.ReadNextFloat(packetData);
+                    int color = dataTypes.ReadNextVarInt(packetData);
+                    dataTypes.ReadNextVarInt(packetData); // division
+                    dataTypes.ReadNextByte(packetData); // flags
+                    return new ChatBots.BossBarEvent("add", id, title, health, ChatBots.ConsoleKinds.BossColorName(color));
+                }
+                case 1:
+                    return new ChatBots.BossBarEvent("remove", id);
+                case 2:
+                    return new ChatBots.BossBarEvent("update", id, Progress: dataTypes.ReadNextFloat(packetData));
+                case 3:
+                    return new ChatBots.BossBarEvent("update", id, Text: dataTypes.ReadNextChat(packetData));
+                case 4:
+                {
+                    int color = dataTypes.ReadNextVarInt(packetData);
+                    dataTypes.ReadNextVarInt(packetData); // division
+                    return new ChatBots.BossBarEvent("update", id, Color: ChatBots.ConsoleKinds.BossColorName(color));
+                }
+                default:
+                    return null; // 5: flags only
+            }
         }
 
         /// <summary>

@@ -382,6 +382,12 @@ cooldown: {6}</value>
   <data name="bot.autoRespond.regex_turned_off" xml:space="preserve">
     <value>This rule kept taking too long and is turned off until the next connection: {0}</value>
   </data>
+  <data name="bot.autoRespond.vars_refused" xml:space="preserve">
+    <value>Reply not sent: names and parts may only be letters, digits and underscores ({0}).</value>
+  </data>
+  <data name="bot.autoRespond.vars_unusable" xml:space="preserve">
+    <value>This rule's values cannot be checked, so the rule is off: {0}</value>
+  </data>
   <data name="bot.chatLog.invalid_file" xml:space="preserve">
     <value>Path '{0}' contains invalid characters.</value>
   </data>
@@ -644,6 +650,9 @@ cooldown: {6}</value>
   </data>
   <data name="bot.script.pm.loaded" xml:space="preserve">
     <value>Script '{0}' loaded.</value>
+  </data>
+  <data name="bot.script.reply_too_long" xml:space="preserve">
+    <value>Reply not sent: with its values it does not fit in one chat message.</value>
   </data>
   <data name="script.compile.error" xml:space="preserve">
     <value>Error in {0} at line {1}, column {2}: [{3}] {4}</value>
