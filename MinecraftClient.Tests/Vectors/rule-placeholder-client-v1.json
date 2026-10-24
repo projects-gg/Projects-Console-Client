@@ -1,0 +1,893 @@
+{
+  "description": "The client part of the cloud AFK rule placeholder vectors (projects-studio services/cloud-afk/test-vectors/rule-placeholder-v1.json, sections values and runs, copied unchanged; refresh by copying them again). values: the strict class of MCC_MATCH_VARS=strict (value null: not well-formed Unicode, utf16 lists its code units). runs: one rule, one chat line as MCC reads it (type public / private / other, sender, message) and what the bot sends: the reply with {u} and {1}-{9} filled in, or null with why (from, self, nomatch, value). afk-host writes the reply as a script line with %match_u% and %match_N% and the names in vars=.",
+  "valueMax": 24,
+  "self": "Ahmet_AFK",
+  "values": [
+    {
+      "name": "an in-game name",
+      "value": "Kaan_07",
+      "ok": true
+    },
+    {
+      "name": "a short name",
+      "value": "Ali",
+      "ok": true
+    },
+    {
+      "name": "one letter",
+      "value": "a",
+      "ok": true
+    },
+    {
+      "name": "one digit",
+      "value": "7",
+      "ok": true
+    },
+    {
+      "name": "an underscore",
+      "value": "_",
+      "ok": true
+    },
+    {
+      "name": "Turkish capitals",
+      "value": "ÇĞİÖŞÜ",
+      "ok": true
+    },
+    {
+      "name": "Turkish small letters",
+      "value": "çğıöşü",
+      "ok": true
+    },
+    {
+      "name": "a dotless i",
+      "value": "ılık",
+      "ok": true
+    },
+    {
+      "name": "digits only",
+      "value": "05321234567",
+      "ok": true
+    },
+    {
+      "name": "24 characters",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaa",
+      "ok": true
+    },
+    {
+      "name": "25 characters",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ok": false
+    },
+    {
+      "name": "empty",
+      "value": "",
+      "ok": false
+    },
+    {
+      "name": "a space",
+      "value": "Kaan Ali",
+      "ok": false
+    },
+    {
+      "name": "a tab",
+      "value": "Kaan\tAli",
+      "ok": false
+    },
+    {
+      "name": "a dot",
+      "value": "discord.gg",
+      "ok": false
+    },
+    {
+      "name": "a slash",
+      "value": "/pay",
+      "ok": false
+    },
+    {
+      "name": "a percent sign",
+      "value": "%username%",
+      "ok": false
+    },
+    {
+      "name": "a backslash",
+      "value": "\\quit",
+      "ok": false
+    },
+    {
+      "name": "a hyphen",
+      "value": "a-b",
+      "ok": false
+    },
+    {
+      "name": "an apostrophe",
+      "value": "Kaan'a",
+      "ok": false
+    },
+    {
+      "name": "a colon",
+      "value": "a:b",
+      "ok": false
+    },
+    {
+      "name": "an at sign",
+      "value": "a@b",
+      "ok": false
+    },
+    {
+      "name": "a number sign",
+      "value": "#1",
+      "ok": false
+    },
+    {
+      "name": "a dollar sign",
+      "value": "$5",
+      "ok": false
+    },
+    {
+      "name": "a plus sign",
+      "value": "+90",
+      "ok": false
+    },
+    {
+      "name": "a less-than sign",
+      "value": "<b>",
+      "ok": false
+    },
+    {
+      "name": "a quotation mark",
+      "value": "\"x\"",
+      "ok": false
+    },
+    {
+      "name": "Cyrillic letters",
+      "value": "Привет",
+      "ok": true
+    },
+    {
+      "name": "Greek letters",
+      "value": "Γειά",
+      "ok": true
+    },
+    {
+      "name": "Arabic letters",
+      "value": "مرحبا",
+      "ok": true
+    },
+    {
+      "name": "CJK letters",
+      "value": "你好",
+      "ok": true
+    },
+    {
+      "name": "Hangul syllables",
+      "value": "안녕",
+      "ok": true
+    },
+    {
+      "name": "fullwidth letters",
+      "value": "Ａｌｉ",
+      "ok": true
+    },
+    {
+      "name": "a circled number",
+      "value": "①",
+      "ok": true
+    },
+    {
+      "name": "a vulgar fraction",
+      "value": "½",
+      "ok": true
+    },
+    {
+      "name": "a Roman numeral",
+      "value": "Ⅻ",
+      "ok": true
+    },
+    {
+      "name": "a superscript two",
+      "value": "x²",
+      "ok": true
+    },
+    {
+      "name": "Devanagari digits",
+      "value": "१२३",
+      "ok": true
+    },
+    {
+      "name": "a supplementary letter",
+      "value": "𝐀",
+      "ok": false
+    },
+    {
+      "name": "an emoji",
+      "value": "😀",
+      "ok": false
+    },
+    {
+      "name": "a degree Celsius sign",
+      "value": "℃",
+      "ok": false
+    },
+    {
+      "name": "a combining accent",
+      "value": "é",
+      "ok": false
+    },
+    {
+      "name": "a zero-width space",
+      "value": "Ka​an",
+      "ok": false
+    },
+    {
+      "name": "a zero-width joiner",
+      "value": "Ka‍an",
+      "ok": false
+    },
+    {
+      "name": "a right-to-left override",
+      "value": "Kaan‮",
+      "ok": false
+    },
+    {
+      "name": "a first strong isolate",
+      "value": "⁨Kaan",
+      "ok": false
+    },
+    {
+      "name": "a no-break space",
+      "value": "Kaan Ali",
+      "ok": false
+    },
+    {
+      "name": "a soft hyphen",
+      "value": "Ka­an",
+      "ok": false
+    },
+    {
+      "name": "a Hangul filler",
+      "value": "ㅤ",
+      "ok": false
+    },
+    {
+      "name": "a Hangul choseong filler",
+      "value": "ᅟ",
+      "ok": false
+    },
+    {
+      "name": "a Hangul jungseong filler",
+      "value": "aᅠ",
+      "ok": false
+    },
+    {
+      "name": "a halfwidth Hangul filler",
+      "value": "ﾠb",
+      "ok": false
+    },
+    {
+      "name": "a byte order mark",
+      "value": "﻿Kaan",
+      "ok": false
+    },
+    {
+      "name": "a lone surrogate",
+      "value": null,
+      "utf16": [
+        "0061",
+        "D800"
+      ],
+      "ok": false
+    }
+  ],
+  "runs": [
+    {
+      "name": "invite",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet Ali"
+      },
+      "reply": "/msg Kaan Ali davet listene eklendi."
+    },
+    {
+      "name": "invite, Turkish letters",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet Çağrı"
+      },
+      "reply": "/msg Kaan Çağrı davet listene eklendi."
+    },
+    {
+      "name": "invite, digits",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet 05321234567"
+      },
+      "reply": "/msg Kaan 05321234567 davet listene eklendi."
+    },
+    {
+      "name": "invite, 24 characters",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet bbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "reply": "/msg Kaan bbbbbbbbbbbbbbbbbbbbbbbb davet listene eklendi."
+    },
+    {
+      "name": "invite, fullwidth letters",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet Ａｌｉ"
+      },
+      "reply": "/msg Kaan Ａｌｉ davet listene eklendi."
+    },
+    {
+      "name": "invite, a circled number",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet ①"
+      },
+      "reply": "/msg Kaan ① davet listene eklendi."
+    },
+    {
+      "name": "invite, as a private message",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "private",
+        "sender": "Kaan",
+        "message": "!davet Ali"
+      },
+      "reply": "/msg Kaan Ali davet listene eklendi."
+    },
+    {
+      "name": "attack: a stranger's payment",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet Ali /pay Kaan 1000"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a link",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet discord.gg/abc"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a variable",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet %username%"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a backslash command",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet \\quit"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a right-to-left override",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet Ali‮"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a zero-width space",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet Ka​an"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a Hangul filler",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet ㅤ"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: 25 characters",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet bbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a supplementary letter",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet 𝐀"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: an extra argument",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet Ali Veli"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "attack: a slash command as the value",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "!davet /op"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "a server line has no sender",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "other",
+        "sender": "",
+        "message": "!davet Ali"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "the bot's own line",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ahmet_AFK",
+        "message": "!davet Ali"
+      },
+      "reply": null,
+      "why": "self"
+    },
+    {
+      "name": "no match",
+      "rule": {
+        "match": "^!davet (.+)$",
+        "regex": true,
+        "from": "any",
+        "reply": "/msg {u} {1} davet listene eklendi."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Kaan",
+        "message": "selam"
+      },
+      "reply": null,
+      "why": "nomatch"
+    },
+    {
+      "name": "hello",
+      "rule": {
+        "match": "selam",
+        "regex": false,
+        "from": "player",
+        "reply": "Selam {u}, şu an AFK'yım."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Mert",
+        "message": "selam millet"
+      },
+      "reply": "Selam Mert, şu an AFK'yım."
+    },
+    {
+      "name": "hello, any case",
+      "rule": {
+        "match": "selam",
+        "regex": false,
+        "from": "player",
+        "reply": "Selam {u}, şu an AFK'yım."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Mert_07",
+        "message": "SELAM"
+      },
+      "reply": "Selam Mert_07, şu an AFK'yım."
+    },
+    {
+      "name": "hello, not a private message",
+      "rule": {
+        "match": "selam",
+        "regex": false,
+        "from": "player",
+        "reply": "Selam {u}, şu an AFK'yım."
+      },
+      "line": {
+        "type": "private",
+        "sender": "Mert",
+        "message": "selam"
+      },
+      "reply": null,
+      "why": "from"
+    },
+    {
+      "name": "hello, not a server line",
+      "rule": {
+        "match": "selam",
+        "regex": false,
+        "from": "player",
+        "reply": "Selam {u}, şu an AFK'yım."
+      },
+      "line": {
+        "type": "other",
+        "sender": "",
+        "message": "selam"
+      },
+      "reply": null,
+      "why": "from"
+    },
+    {
+      "name": "price",
+      "rule": {
+        "match": "^fiyat ([0-9]+)$",
+        "regex": true,
+        "from": "private",
+        "reply": "/msg {u} {1} tamam, not aldım."
+      },
+      "line": {
+        "type": "private",
+        "sender": "Deniz",
+        "message": "fiyat 45000"
+      },
+      "reply": "/msg Deniz 45000 tamam, not aldım."
+    },
+    {
+      "name": "price with a dot does not match",
+      "rule": {
+        "match": "^fiyat ([0-9]+)$",
+        "regex": true,
+        "from": "private",
+        "reply": "/msg {u} {1} tamam, not aldım."
+      },
+      "line": {
+        "type": "private",
+        "sender": "Deniz",
+        "message": "fiyat 45.000"
+      },
+      "reply": null,
+      "why": "nomatch"
+    },
+    {
+      "name": "price, public chat",
+      "rule": {
+        "match": "^fiyat ([0-9]+)$",
+        "regex": true,
+        "from": "private",
+        "reply": "/msg {u} {1} tamam, not aldım."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Deniz",
+        "message": "fiyat 45000"
+      },
+      "reply": null,
+      "why": "from"
+    },
+    {
+      "name": "sells",
+      "rule": {
+        "match": "^(\\S+) satıyor$",
+        "regex": true,
+        "from": "any",
+        "reply": "Kaç para {1}?"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "elytra satıyor"
+      },
+      "reply": "Kaç para elytra?"
+    },
+    {
+      "name": "sells, a dot",
+      "rule": {
+        "match": "^(\\S+) satıyor$",
+        "regex": true,
+        "from": "any",
+        "reply": "Kaç para {1}?"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "e.lytra satıyor"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "sells, a variable",
+      "rule": {
+        "match": "^(\\S+) satıyor$",
+        "regex": true,
+        "from": "any",
+        "reply": "Kaç para {1}?"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "%serverip% satıyor"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "sells, a slash",
+      "rule": {
+        "match": "^(\\S+) satıyor$",
+        "regex": true,
+        "from": "any",
+        "reply": "Kaç para {1}?"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "/pay satıyor"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "award",
+      "rule": {
+        "match": "^Ödül: (.+)$",
+        "regex": true,
+        "from": "server",
+        "reply": "Tamam, {1}."
+      },
+      "line": {
+        "type": "other",
+        "sender": "",
+        "message": "Ödül: Elmas"
+      },
+      "reply": "Tamam, Elmas."
+    },
+    {
+      "name": "award, a space",
+      "rule": {
+        "match": "^Ödül: (.+)$",
+        "regex": true,
+        "from": "server",
+        "reply": "Tamam, {1}."
+      },
+      "line": {
+        "type": "other",
+        "sender": "",
+        "message": "Ödül: 3 Elmas"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "award, public chat",
+      "rule": {
+        "match": "^Ödül: (.+)$",
+        "regex": true,
+        "from": "server",
+        "reply": "Tamam, {1}."
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "Ödül: Elmas"
+      },
+      "reply": null,
+      "why": "from"
+    },
+    {
+      "name": "optional part present",
+      "rule": {
+        "match": "^gel ?([a-z]+)?$",
+        "regex": true,
+        "from": "any",
+        "reply": "Tamam {1}"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "gel ali"
+      },
+      "reply": "Tamam ali"
+    },
+    {
+      "name": "optional part missing",
+      "rule": {
+        "match": "^gel ?([a-z]+)?$",
+        "regex": true,
+        "from": "any",
+        "reply": "Tamam {1}"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "gel"
+      },
+      "reply": null,
+      "why": "value"
+    },
+    {
+      "name": "second branch",
+      "rule": {
+        "match": "^(?:a(x)|b(y))$",
+        "regex": true,
+        "from": "any",
+        "reply": "Seçim {2}"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "by"
+      },
+      "reply": "Seçim y"
+    },
+    {
+      "name": "first branch leaves the part empty",
+      "rule": {
+        "match": "^(?:a(x)|b(y))$",
+        "regex": true,
+        "from": "any",
+        "reply": "Seçim {2}"
+      },
+      "line": {
+        "type": "public",
+        "sender": "Ece",
+        "message": "ax"
+      },
+      "reply": null,
+      "why": "value"
+    }
+  ]
+}

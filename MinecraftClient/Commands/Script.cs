@@ -21,7 +21,7 @@ namespace MinecraftClient.Commands
 
             dispatcher.Register(l => l.Literal(CmdName)
                 .Then(l => l.Argument("Script", MccArguments.ScriptName())
-                    .Executes(r => DoExecuteScript(r.Source, Arguments.GetString(r, "Script"), null)))
+                    .Executes(r => DoExecuteScript(r.Source, Arguments.GetString(r, "Script"), r.Source.ScriptVariables)))
                 .Then(l => l.Literal("_help")
                     .Executes(r => GetUsage(r.Source, string.Empty))
                     .Redirect(dispatcher.GetRoot().GetChild("help").GetChild(CmdName)))
@@ -38,10 +38,12 @@ namespace MinecraftClient.Commands
             });
         }
 
+        /// <param name="localVars">An auto-reply's strict values (CmdResult.ScriptVariables), else null as always</param>
         private int DoExecuteScript(CmdResult r, string command, Dictionary<string, object>? localVars)
         {
             McClient handler = CmdResult.currentHandler!;
-            handler.BotLoad(new ChatBots.Script(command.Trim(), null, localVars));
+            // A script that gets an auto-reply's values sends each filled line as one chat message or not at all.
+            handler.BotLoad(new ChatBots.Script(command.Trim(), null, localVars) { FilledReplies = localVars is not null });
             return r.SetAndReturn(CmdResult.Status.Done);
         }
     }

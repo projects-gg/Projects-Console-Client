@@ -19,4 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="..\MinecraftClient\MinecraftClient.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Vectors\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
