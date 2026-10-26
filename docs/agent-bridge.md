@@ -14,7 +14,8 @@ Tests: `MinecraftClient.Tests/AgentBridgeTests.cs`, `AgentBridgeV2Tests.cs`, `Co
 `AutoRespondVarsTests.cs`.
 
 Contract version: **2** (the `v` of `hello`): version 1 as described below, and the additions in
-[Version 2](#version-2-client-411).
+[Version 2](#version-2-client-411). A host that asks for movement (`MCC_AGENT_MOVE=1`) gets **3**: version 2 and
+[Version 3](#version-3-client-420-movement).
 
 ## Activation
 
@@ -462,6 +463,98 @@ Boss bars, from the boss bar packet:
 
 Release builds are not ReadyToRun yet: that waits for the memory measurement.
 
+## Version 3 (client 4.2.0): movement
+
+For the cloud's movement (projects-studio `services/cloud-afk/README.md`, "Movement"; `services/afk-host/README.md`,
+"Movement"): the player walks the account by hand from the site, the launcher or the phone. Everything here starts only
+with `MCC_AGENT_MOVE=1`; without it the operations below are `unknown_op` and no event changes, exactly as in version 2.
+
+| Variable | Meaning |
+| --- | --- |
+| `MCC_AGENT_MOVE` | `1`: `hello.v` is 3, the movement operations are known, and `pos` and `move` are written whatever `MCC_AGENT_EVENTS` names (an unset `MCC_AGENT_EVENTS` keeps version 1's groups and timing, so an AFK+ bot's trade proof is unchanged) |
+| `MCC_AGENT_FOLLOW` | the names `approach` and `follow` may name, comma-separated (player names; others are ignored). Empty or unset: none |
+
+The client moves only with terrain and entity handling (`TerrainAndMovements`, `EntityHandling`); without them every
+movement operation but `stop` is refused with `movement_disabled`.
+
+### Operations
+
+```json
+{"op":"step","id":"m1","dir":"forward","n":1}
+{"op":"jump","id":"m2"}
+{"op":"sneak","id":"m3","on":true}
+{"op":"goto","id":"m4","x":120,"y":64,"z":-40}
+{"op":"approach","id":"m5","name":"Kaan_07"}
+{"op":"follow","id":"m6","name":"Kaan_07"}
+{"op":"stop","id":"m7"}
+```
+
+| Op | Fields | Does |
+| --- | --- | --- |
+| `step` | `dir`, `n` (1–8) | walks `n` blocks in a straight line toward `dir`: `forward`, `back`, `left`, `right` of where the account looks (snapped to a compass direction), or `north`, `south`, `east`, `west`. It climbs a block, steps down, and stops before a wall, a drop of more than 3 blocks or a harmful block. Afterwards the account looks where it looked before its steps, so `forward` keeps its meaning. A step toward the direction it is already stepping extends the walk, to at most 8 blocks ahead of where it stands |
+| `jump` | | one jump, when it stands on something |
+| `sneak` | `on` | sneaks until `sneak` off: the server sees the sneak key (Player Input from 1.21.6, Player Command before), and the physics move slowly and never off an edge. While it sneaks, nothing else (AntiAFK, a slab overhead) toggles it |
+| `goto` | `x`, `y`, `z` (block; `x`, `z` within ±30,000,000, `y` within ±2048) | walks to that block, at most 256 blocks away (from the feet to the block's centre), within 2 minutes |
+| `approach` | `name` | walks to 2 blocks from that player and stops, within 2 minutes |
+| `follow` | `name` | keeps 2–3 blocks behind that player, at most 30 minutes, while it stays in sight |
+| `stop` | | stops steps, a walk or following (sneaking stays) |
+
+- **One activity at a time.** `step`, `goto`, `approach` and `follow` replace what runs (no `move` event in between);
+  `jump` and `sneak` go with it. There are no lists of waypoints, no repetition, no patrol.
+- **`stop` always works**: it is never `busy` (it gets in while twice the queue waits), never `stale`, never rate
+  limited; it stops movement at the next tick, ahead of the operations waiting before it, which it makes `stale`. Before
+  joining, or without movement, it is acknowledged and does nothing.
+- **The route.** `goto`, `approach` and `follow` search a path through the terrain the server sent (never into a chunk
+  it did not send): a weighted A* over block cells with MCC's moves (`Movement.GetAvailableMoves`, no unsafe cells),
+  of at most 4,000 cells (1,500 while following), on another thread, cancelled after a second, one at a time. When the
+  goal is out of reach of one search (unknown terrain, the limit), the account walks to the cell nearest to it and
+  searches again; three searches that bring it no nearer end the walk (`blocked`). Following searches again at most once
+  a second, when the player moved more than 2 blocks or the walk ended. A walk that does not move for 2 seconds counts
+  as stuck. A step searches along its own line only (128 cells), on the game thread.
+- **Names.** `approach` and `follow` take only a name in `MCC_AGENT_FOLLOW` and never the account's own (`not_allowed`),
+  and only a player the client tracks within 64 blocks (`not_visible`): the host decides whose name it may pass, the
+  client refuses anything else.
+- **Rate.** Movement operations other than `stop` take from a bucket of 8 that gets 4 back a second (`rate_limited`),
+  besides version 1's 10 a second for every operation.
+- `ack` means the activity started; how it goes shows in `move` events.
+
+### Events
+
+With `MCC_AGENT_MOVE=1`, `pos` (still checked once a second) carries `facing` and is written whenever the block the
+feet are in, the dimension or `facing` changed (a one-block step may move the feet less than a block); `move` says what
+the account does, on every change:
+
+```json
+{"e":"pos","seq":90,"at":1792844190000,"x":120.5,"y":64.0,"z":-39.5,"dim":"minecraft:overworld","facing":"north"}
+{"e":"move","seq":91,"at":1792844190020,"doing":"goto","id":"m4","to":{"x":120,"y":64,"z":-40},"until":1792844310020,"sneak":false}
+{"e":"move","seq":97,"at":1792844199000,"doing":"idle","ended":"arrived","sneak":false}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `pos.facing` | `north`, `south`, `east`, `west`: what `forward` means now (while it takes steps, where it looked before them) |
+| `doing` | `idle`, `step`, `goto`, `approach`, `follow`; right after `joined`, `idle`, or `off` when the client runs without terrain or entity handling (not started with them, or the joined version has none) |
+| `id` | the operation that started it |
+| `to` | `goto`: the target block |
+| `name` | `approach`, `follow`: the player |
+| `until` | `goto`, `approach`, `follow`: when the client stops it by itself (Unix milliseconds) |
+| `ended` | with `idle`: `arrived`, `blocked` (a wall, a drop, stuck, no way further), `no_path` (no way there found), `timeout` (a walk not there in 2 minutes), `limit` (following stopped after 30 minutes), `out_of_sight` (the player left sight), `reset` (the server moved the account: a respawn, another world, a jump of more than 8 blocks in a tick); none after a `stop` |
+| `sneak` | it sneaks |
+
+A new session starts idle and not sneaking; a disconnection ends what ran without a `move` event (`left` says it).
+
+### New `err` reasons
+
+| Reason | Meaning |
+| --- | --- |
+| `movement_disabled` | no terrain or entity handling |
+| `not_ready` | the server has not told the client where it stands yet |
+| `bad_dir`, `bad_count`, `bad_name` | a `step` direction, a step count outside 1–8, a name that is no player name |
+| `blocked` | a `step` with not one block to go |
+| `too_far` | a `goto` more than 256 blocks away |
+| `not_allowed` | a name not in `MCC_AGENT_FOLLOW`, or the account's own |
+| `not_visible` | that player is not in sight (64 blocks) |
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and
@@ -480,7 +573,11 @@ Release builds are not ReadyToRun yet: that waits for the memory measurement.
 
 - Without the two descriptor variables nothing of the agent bridge runs, and the only visible change for other
   users is the stdout hardening above (only with `MCC_LAUNCHER_BRIDGE`). Version 2's console kinds and strict values
-  run only with their own variables (`MCC_CONSOLE_KINDS`, `MCC_MATCH_VARS`).
+  run only with their own variables (`MCC_CONSOLE_KINDS`, `MCC_MATCH_VARS`), version 3's movement only with
+  `MCC_AGENT_MOVE=1`.
+- Since 4.1.2, for every user: from 1.21.6 an entity action goes to the server in that version's form (sneaking is
+  the Player Input packet's sneak key, the other Player Command ids moved down by two). Before, AntiAFK's "sneak" sent
+  "leave bed" and "start sprinting" to 1.21.6 and later servers.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

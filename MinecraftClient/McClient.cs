@@ -129,6 +129,10 @@ namespace MinecraftClient
         private bool isUnderSlab = false;
         private DateTime nextSneakingUpdate = DateTime.Now;
 
+        // The agent bridge's movement (docs/agent-bridge.md, version 3): set only by the bridge, inert otherwise.
+        private volatile bool bridgeSneak;
+        private int bridgeJumpTicks;
+
         // Entity handling
         private readonly Dictionary<int, Entity> entities = new();
         private readonly Lock signDataLock = new();
@@ -577,6 +581,7 @@ namespace MinecraftClient
             pathTarget = null;
             _yaw = null;
             _pitch = null;
+            bridgeJumpTicks = 0;
             LastDigPosition = null;
             RemainingDiggingTime = 0;
             nextSneakingUpdate = DateTime.Now;
@@ -2021,6 +2026,9 @@ namespace MinecraftClient
         /// <returns>TRUE if the item was successfully used</returns>
         public bool SendEntityAction(EntityActionType entityAction)
         {
+            // The agent bridge holds the sneak key (version 3): other toggles would undo the player's choice.
+            if (bridgeSneak && entityAction is EntityActionType.StartSneaking or EntityActionType.StopSneaking)
+                return true;
             return InvokeOnMainThread(() => handler.SendEntityAction(playerEntityID, (int)entityAction));
         }
 
@@ -3611,6 +3619,81 @@ namespace MinecraftClient
             {
                 SetInputToward(pathTarget.Value);
             }
+
+            // The agent bridge's sneaking and jump (version 3): slow, and never off an edge, while it sneaks.
+            if (bridgeSneak)
+            {
+                physicsInput.Sneak = true;
+                physicsInput.Sprint = false;
+            }
+
+            if (bridgeJumpTicks > 0)
+            {
+                bridgeJumpTicks--;
+                physicsInput.Jump = true;
+            }
+        }
+
+        /// <summary>The server told the client where it stands (agent bridge movement).</summary>
+        internal bool LocationKnown => locationReceived;
+
+        /// <summary>A path is being walked: waypoints left, or one still being walked to (agent bridge movement).</summary>
+        internal bool WalkingPath
+        {
+            get
+            {
+                lock (locationLock)
+                    return pathTarget is not null || (path is not null && path.Count > 0);
+            }
+        }
+
+        /// <summary>Walk these waypoints, replacing any path (agent bridge movement; a search made them).</summary>
+        internal void WalkWaypoints(IEnumerable<Location> waypoints)
+        {
+            lock (locationLock)
+            {
+                pathTarget = null;
+                path = new Queue<Location>(waypoints);
+            }
+        }
+
+        /// <summary>Stop walking at once, also the waypoint being walked to (agent bridge movement).</summary>
+        internal void HaltPath()
+        {
+            lock (locationLock)
+            {
+                path = null;
+                pathTarget = null;
+            }
+        }
+
+        /// <summary>Turn to this yaw; the next physics tick applies and sends it (agent bridge movement).</summary>
+        internal void LookTowards(float yaw)
+        {
+            lock (locationLock)
+            {
+                _yaw = yaw;
+                _pitch = playerPitch;
+            }
+        }
+
+        /// <summary>Press jump for two ticks: the physics jumps once, when standing (agent bridge movement).</summary>
+        internal void BridgeJump()
+        {
+            bridgeJumpTicks = 2;
+        }
+
+        /// <summary>
+        /// Sneak, or stop, for the agent bridge: the packet for the server's version, the physics' sneak key and
+        /// <see cref="IsSneaking"/>. While the bridge holds it, nobody else's sneak toggle (AntiAFK, a slab overhead)
+        /// is sent.
+        /// </summary>
+        internal bool SetBridgeSneak(bool on)
+        {
+            bridgeSneak = on;
+            IsSneaking = on;
+            EntityActionType action = on ? EntityActionType.StartSneaking : EntityActionType.StopSneaking;
+            return InvokeOnMainThread(() => handler.SendEntityAction(playerEntityID, (int)action));
         }
 
         /// <summary>

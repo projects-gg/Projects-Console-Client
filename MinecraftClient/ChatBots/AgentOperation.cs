@@ -7,8 +7,10 @@ namespace MinecraftClient.ChatBots
     /// <summary>
     /// One operation from the agent bridge's input (docs/agent-bridge.md): a window click, an anvil name, a window
     /// close, a hotbar slot or a snapshot request; from version 2 also a drop, using the held item, and clicks and
-    /// drops on the player inventory while no window is open (<c>win: 0, ws: 0</c>). There is no text command: chat
-    /// and commands keep going through stdin, built by the host from fixed templates.
+    /// drops on the player inventory while no window is open (<c>win: 0, ws: 0</c>); from version 3, with
+    /// <c>MCC_AGENT_MOVE=1</c>, movement (steps, a jump, sneaking, a walk to coordinates or to a player, following a
+    /// player, stop). There is no text command: chat and commands keep going through stdin, built by the host from
+    /// fixed templates.
     /// </summary>
     internal sealed record AgentOperation
     {
@@ -20,8 +22,20 @@ namespace MinecraftClient.ChatBots
         public const string Drop = "drop";
         public const string Use = "use";
 
+        // Version 3: movement.
+        public const string Step = "step";
+        public const string Jump = "jump";
+        public const string Sneak = "sneak";
+        public const string Goto = "goto";
+        public const string Approach = "approach";
+        public const string Follow = "follow";
+        public const string Stop = "stop";
+
         public const int MaxIdLength = 64;
         public const int MaxRenameLength = 12;
+        public const int MaxSteps = 8;
+        public const int MaxCoordinate = 30_000_000;
+        public const int MaxHeight = 2048;
 
         /// <summary>Order of arrival within the process, from 1.</summary>
         public required long Arrival { get; init; }
@@ -45,15 +59,44 @@ namespace MinecraftClient.ChatBots
         /// <summary><c>drop</c>: the whole stack instead of one item.</summary>
         public bool Stack { get; init; }
 
+        /// <summary><c>step</c>: <c>forward</c>, <c>back</c>, <c>left</c>, <c>right</c> (of the facing) or a compass direction.</summary>
+        public string? Dir { get; init; }
+
+        /// <summary><c>step</c>: how many blocks, 1-8.</summary>
+        public int Count { get; init; }
+
+        /// <summary><c>sneak</c>: on or off.</summary>
+        public bool On { get; init; }
+
+        /// <summary><c>goto</c>: the target block.</summary>
+        public int X { get; init; }
+
+        public int Y { get; init; }
+        public int Z { get; init; }
+
+        /// <summary><c>approach</c>, <c>follow</c>: the player's name.</summary>
+        public string? Name { get; init; }
+
         /// <summary>A click or drop on the player inventory while no window is open: <c>win: 0, ws: 0</c>.</summary>
         public bool OnPlayerInventory => Window == 0 && WindowSeq == 0;
 
+        /// <summary>A version 3 movement operation other than <c>stop</c>.</summary>
+        public bool Moves => Op is Step or Jump or Sneak or Goto or Approach or Follow;
+
         /// <summary>
         /// Parse and check the shape of one input line. On failure, <paramref name="op"/> and
-        /// <paramref name="id"/> carry what could be read, for the error event.
+        /// <paramref name="id"/> carry what could be read, for the error event. Movement operations are known only when
+        /// the host asked for movement (<c>MCC_AGENT_MOVE=1</c>).
         /// </summary>
         public static bool TryParse(ReadOnlySpan<byte> line, long arrival, [NotNullWhen(true)] out AgentOperation? operation,
             out string? op, out string? id, out string? reason)
+        {
+            return TryParse(line, arrival, AgentMovement.Enabled, out operation, out op, out id, out reason);
+        }
+
+        /// <summary>As above; <paramref name="movement"/>: the movement operations are known.</summary>
+        public static bool TryParse(ReadOnlySpan<byte> line, long arrival, bool movement,
+            [NotNullWhen(true)] out AgentOperation? operation, out string? op, out string? id, out string? reason)
         {
             operation = null;
             op = null;
@@ -93,7 +136,9 @@ namespace MinecraftClient.ChatBots
                     return false;
 
                 op = opElement.GetString();
-                if (op is not (Click or Rename or Close or Hold or Snapshot or Drop or Use))
+                bool known = op is Click or Rename or Close or Hold or Snapshot or Drop or Use
+                             || movement && op is Step or Jump or Sneak or Goto or Approach or Follow or Stop;
+                if (op is null || !known)
                 {
                     reason = "unknown_op";
                     op = op is { Length: <= 16 } ? op : "?";
@@ -120,9 +165,9 @@ namespace MinecraftClient.ChatBots
                     windowSeq = value;
                 }
 
-                int slot = 0, button = 0;
-                bool stack = false;
-                string? mode = null, text = null, what = null;
+                int slot = 0, button = 0, count = 0, x = 0, y = 0, z = 0;
+                bool stack = false, on = false;
+                string? mode = null, text = null, what = null, dir = null, name = null;
                 switch (op)
                 {
                     case Click:
@@ -180,6 +225,58 @@ namespace MinecraftClient.ChatBots
                         break;
 
                     case Use:
+                    case Jump:
+                    case Stop:
+                        break;
+
+                    case Step:
+                        if (!root.TryGetProperty("dir", out JsonElement dirElement) || dirElement.ValueKind != JsonValueKind.String
+                            || !root.TryGetProperty("n", out JsonElement countElement))
+                            return false;
+                        dir = dirElement.GetString();
+                        if (dir is not ("forward" or "back" or "left" or "right" or "north" or "south" or "east" or "west"))
+                        {
+                            reason = "bad_dir";
+                            return false;
+                        }
+
+                        if (!TryReadInt(countElement, 1, MaxSteps, out count))
+                        {
+                            reason = "bad_count";
+                            return false;
+                        }
+
+                        break;
+
+                    case Sneak:
+                        if (!root.TryGetProperty("on", out JsonElement onElement)
+                            || onElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                            return false;
+                        on = onElement.GetBoolean();
+                        break;
+
+                    case Goto:
+                        if (!root.TryGetProperty("x", out JsonElement xElement)
+                            || !TryReadInt(xElement, -MaxCoordinate, MaxCoordinate, out x)
+                            || !root.TryGetProperty("y", out JsonElement yElement)
+                            || !TryReadInt(yElement, -MaxHeight, MaxHeight, out y)
+                            || !root.TryGetProperty("z", out JsonElement zElement)
+                            || !TryReadInt(zElement, -MaxCoordinate, MaxCoordinate, out z))
+                            return false;
+                        break;
+
+                    case Approach:
+                    case Follow:
+                        if (!root.TryGetProperty("name", out JsonElement nameElement)
+                            || nameElement.ValueKind != JsonValueKind.String)
+                            return false;
+                        name = nameElement.GetString();
+                        if (!IsValidPlayerName(name))
+                        {
+                            reason = "bad_name";
+                            return false;
+                        }
+
                         break;
                 }
 
@@ -196,6 +293,13 @@ namespace MinecraftClient.ChatBots
                     Text = text,
                     What = what,
                     Stack = stack,
+                    Dir = dir,
+                    Count = count,
+                    On = on,
+                    X = x,
+                    Y = y,
+                    Z = z,
+                    Name = name,
                 };
                 reason = null;
                 return true;
@@ -211,6 +315,21 @@ namespace MinecraftClient.ChatBots
             foreach (char c in text)
             {
                 if (c is < '0' or > '9')
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>A Minecraft player name: 3-16 of <c>A-Z a-z 0-9 _</c>.</summary>
+        public static bool IsValidPlayerName(string? name)
+        {
+            if (name is null || name.Length is < 3 or > 16)
+                return false;
+
+            foreach (char c in name)
+            {
+                if (!(char.IsAsciiLetterOrDigit(c) || c == '_'))
                     return false;
             }
 
