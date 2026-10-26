@@ -5432,13 +5432,51 @@ namespace MinecraftClient.Protocol.Handlers
             }
         }
 
+        /// <summary>The sneak key of the Player Input packet (1.21.2+: forward 0x01 … jump 0x10, sneak 0x20, sprint 0x40).</summary>
+        internal const byte PlayerInputSneak = 0x20;
+
+        /// <summary>
+        /// How an entity action (<see cref="EntityActionType"/>) reaches a server of this protocol version. From 1.21.6
+        /// the Player Command packet has no shift key: sneaking is the sneak flag of the Player Input packet, and the
+        /// other actions moved down by two (0 leave bed, 1 start sprinting, 2 stop sprinting, ...). Before, every action
+        /// is the command's own id.
+        /// </summary>
+        /// <returns>The Player Command's action id, or null when the action is the Player Input's sneak key; then
+        /// <paramref name="sneak"/> says whether the key is down.</returns>
+        internal static int? PlayerCommandAction(int protocolVersion, int actionId, out bool sneak)
+        {
+            sneak = false;
+            if (protocolVersion < MC_1_21_6_Version)
+                return actionId;
+
+            switch (actionId)
+            {
+                case (int)EntityActionType.StartSneaking:
+                    sneak = true;
+                    return null;
+                case (int)EntityActionType.StopSneaking:
+                    return null;
+                default:
+                    return actionId - 2;
+            }
+        }
+
         public bool SendEntityAction(int PlayerEntityID, int ActionID)
         {
             try
             {
+                int? command = PlayerCommandAction(protocolVersion, ActionID, out bool sneak);
+                if (command is null)
+                {
+                    // Player Input carries every movement key. This client moves by itself and has no other key
+                    // down: the sneak key alone, as the vanilla client sends it when shift is pressed or released.
+                    SendPacket(PacketTypesOut.SteerVehicle, new[] { sneak ? PlayerInputSneak : (byte)0 });
+                    return true;
+                }
+
                 List<byte> fields = new();
                 fields.AddRange(DataTypes.GetVarInt(PlayerEntityID));
-                fields.AddRange(DataTypes.GetVarInt(ActionID));
+                fields.AddRange(DataTypes.GetVarInt(command.Value));
                 fields.AddRange(DataTypes.GetVarInt(0));
                 SendPacket(PacketTypesOut.EntityAction, fields);
                 return true;
