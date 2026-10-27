@@ -751,7 +751,7 @@ namespace MinecraftClient.Protocol.Handlers
                             "Failed to decode NBT: Does not start with TAG_Compound");
 
                     // NBT root name
-                    var rootName = Encoding.ASCII.GetString(ReadData(ReadNextUShort(cache), cache));
+                    var rootName = ReadNbtString(cache);
 
                     if (!string.IsNullOrEmpty(rootName))
                         nbtData[""] = rootName;
@@ -775,8 +775,7 @@ namespace MinecraftClient.Protocol.Handlers
                     // Read TAG_String
                     if (nextId is 8)
                     {
-                        var byteArrayLength = ReadNextUShort(cache);
-                        var result = Encoding.UTF8.GetString(ReadData(byteArrayLength, cache));
+                        var result = ReadNbtString(cache);
 
                         return new Dictionary<string, object>()
                         {
@@ -793,8 +792,7 @@ namespace MinecraftClient.Protocol.Handlers
                 if (fieldType == 0) // TAG_End
                     return nbtData;
 
-                int fieldNameLength = ReadNextUShort(cache);
-                string fieldName = Encoding.ASCII.GetString(ReadData(fieldNameLength, cache));
+                string fieldName = ReadNbtString(cache);
                 object fieldValue = ReadNbtField(cache, fieldType);
 
                 // This will override previous tags with the same name
@@ -824,7 +822,7 @@ namespace MinecraftClient.Protocol.Handlers
                 case 7: // TAG_Byte_Array
                     return ReadData(ReadNextInt(cache), cache);
                 case 8: // TAG_String
-                    return Encoding.UTF8.GetString(ReadData(ReadNextUShort(cache), cache));
+                    return ReadNbtString(cache);
                 case 9: // TAG_List
                     int listType = ReadNextByte(cache);
                     int listLength = ReadNextInt(cache);
@@ -851,6 +849,15 @@ namespace MinecraftClient.Protocol.Handlers
                 default:
                     throw new System.IO.InvalidDataException("Failed to decode NBT: Unknown field type " + fieldType);
             }
+        }
+
+        /// <summary>
+        /// Read an NBT string (a TAG_String, a tag name or a root name): its length in bytes as an unsigned short,
+        /// then Java's modified UTF-8 (<see cref="ModifiedUtf8"/>), not plain UTF-8.
+        /// </summary>
+        private string ReadNbtString(Queue<byte> cache)
+        {
+            return ModifiedUtf8.Decode(ReadData(ReadNextUShort(cache), cache));
         }
 
         /// <summary>
@@ -1580,9 +1587,7 @@ namespace MinecraftClient.Protocol.Handlers
                     && nbt.TryGetValue("", out var rootVal) && rootVal is string rootStr)
                 {
                     bytes.Add(8); // TAG_String
-                    var strBytes = Encoding.UTF8.GetBytes(rootStr);
-                    bytes.AddRange(GetUShort((ushort)strBytes.Length));
-                    bytes.AddRange(strBytes);
+                    bytes.AddRange(GetNbtString(rootStr));
                     return bytes.ToArray();
                 }
 
@@ -1597,8 +1602,7 @@ namespace MinecraftClient.Protocol.Handlers
 
                     rootName ??= "";
 
-                    bytes.AddRange(GetUShort((ushort)rootName.Length));
-                    bytes.AddRange(Encoding.ASCII.GetBytes(rootName));
+                    bytes.AddRange(GetNbtString(rootName));
                 }
             }
 
@@ -1608,11 +1612,9 @@ namespace MinecraftClient.Protocol.Handlers
                 if (item.Key == "" && root)
                     continue;
 
-                byte[] fieldNameLength = GetUShort((ushort)item.Key.Length);
-                byte[] fieldName = Encoding.ASCII.GetBytes(item.Key);
+                byte[] fieldName = GetNbtString(item.Key);
                 byte[] fieldData = GetNbtField(item.Value, out byte fieldType);
                 bytes.Add(fieldType);
-                bytes.AddRange(fieldNameLength);
                 bytes.AddRange(fieldName);
                 bytes.AddRange(fieldData);
             }
@@ -1667,8 +1669,7 @@ namespace MinecraftClient.Protocol.Handlers
             else if (obj is string)
             {
                 fieldType = 8; // TAG_String
-                byte[] stringBytes = Encoding.UTF8.GetBytes((string)obj);
-                return ConcatBytes(GetUShort((ushort)stringBytes.Length), stringBytes);
+                return GetNbtString((string)obj);
             }
             else if (obj is object[])
             {
@@ -1733,6 +1734,18 @@ namespace MinecraftClient.Protocol.Handlers
                 throw new System.IO.InvalidDataException("GetNbt: Cannot encode data type " + obj.GetType().Name +
                                                          " into NBT!");
             }
+        }
+
+        /// <summary>
+        /// Build an NBT string (a TAG_String, a tag name or a root name) the way Java writes it: its length in bytes as
+        /// an unsigned short, then modified UTF-8 (<see cref="ModifiedUtf8"/>). A string a Java server wrote goes back
+        /// byte for byte.
+        /// </summary>
+        /// <exception cref="System.IO.InvalidDataException">More than 65535 bytes.</exception>
+        private byte[] GetNbtString(string text)
+        {
+            byte[] bytes = ModifiedUtf8.Encode(text);
+            return ConcatBytes(GetUShort((ushort)bytes.Length), bytes);
         }
 
         /// <summary>

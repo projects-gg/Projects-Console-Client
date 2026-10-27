@@ -578,6 +578,10 @@ A new session starts idle and not sneaking; a disconnection ends what ran withou
 - Since 4.1.2, for every user: from 1.21.6 an entity action goes to the server in that version's form (sneaking is
   the Player Input packet's sneak key, the other Player Command ids moved down by two). Before, AntiAFK's "sneak" sent
   "leave bed" and "start sprinting" to 1.21.6 and later servers.
+- Since 4.2.1, for every user: NBT strings (text components from 1.20.3: chat, titles, team prefixes, item names and
+  lore; tag names; item NBT before 1.20.5) are read and written as Java's modified UTF-8. Before, every character
+  outside the Basic Multilingual Plane (an emoji in a chat prefix) arrived as six U+FFFD, and the client wrote NBT
+  strings back as plain UTF-8.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);
