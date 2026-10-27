@@ -350,6 +350,9 @@ longer waits for the window's content (below).
   reported when the server's answer had 150 ms to arrive, also when the server sends none: a vanilla server confirms
   a correctly predicted click with silence, and then the client's view is the result. A plugin that refuses a click
   resyncs the slot, and that change follows as usual.
+- A `snapshot` answers at once with the client's view, which right after a click is the client's guess; the `win_slot`
+  changes that follow are against what the snapshot said (from 4.2.1; before, a snapshot taken between a click and the
+  server's answer hid a refused click's resync, and the slot looked empty until the window opened again).
 - Without `MCC_AGENT_EVENTS` the timing is version 1's: an event for every packet, nothing after a move the server
   does not answer.
 - `close` is accepted before the window's content was reported, for every host. On Canvas (Folia) with

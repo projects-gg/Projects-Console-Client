@@ -103,7 +103,7 @@ namespace MinecraftClient.ChatBots
         private const int InventoryDebounceTicks = 5;
         private const int MaxPlayers = 200;
         private const int MaxChatLength = 2048;
-        private const int MaxSlotEventsPerUpdate = 12;
+        internal const int MaxSlotEventsPerUpdate = 12;
         private const int PlayerInventorySection = 36;
 
         private static bool helloSent;
@@ -141,15 +141,68 @@ namespace MinecraftClient.ChatBots
         private string? lastFacing;
 
         /// <summary>The one window operations may act on: the last one the server opened.</summary>
-        private sealed class OpenWindow(int id, ContainerType type, long openSeq, long openArrival, int total)
+        internal sealed class OpenWindow(int id, ContainerType type, long openSeq, long openArrival, int total)
         {
             public int Id { get; } = id;
             public ContainerType Type { get; } = type;
             public long OpenSeq { get; set; } = openSeq;
             public long OpenArrival { get; } = openArrival;
             public int Total { get; } = total;
-            public bool ContentSent { get; set; }
-            public Dictionary<int, string> Fingerprints { get; set; } = new();
+
+            /// <summary>The window's content was reported (<c>win_items</c> of a report, not of a snapshot).</summary>
+            public bool ContentSent { get; private set; }
+
+            /// <summary>What the host was last told, slot by slot: the base the next changes are found against.</summary>
+            private Dictionary<int, string> told = new();
+
+            /// <summary>
+            /// The slots a report tells the host about now, or null for the whole content: the first report, and a burst
+            /// of more than <paramref name="maxSlots"/> changes (a full resync). Empty when nothing changed since the host
+            /// was last told. The slots returned count as told.
+            /// </summary>
+            public List<int>? Changes(Container container, int maxSlots)
+            {
+                if (!ContentSent)
+                {
+                    ContentSent = true;
+                    return null;
+                }
+
+                Dictionary<int, string> current = Fingerprints(Content(container));
+                List<int> changed = current.Keys.Union(told.Keys)
+                    .Where(slot => !current.TryGetValue(slot, out string? now)
+                                   || !told.TryGetValue(slot, out string? before)
+                                   || now != before)
+                    .Order()
+                    .ToList();
+                if (changed.Count > maxSlots)
+                    return null;
+
+                told = current;
+                return changed;
+            }
+
+            /// <summary>
+            /// The whole content as <c>win_items</c> carries it (the first report, a resync, a <c>snapshot</c>): the
+            /// slots in order, empty ones left out. It counts as told, a snapshot's too: one taken between the bot's
+            /// click and the server's answer shows the client's guess, and the server's correction must then be a
+            /// change against it (before 4.2.1 a refused click's resync went unreported and the slot looked empty).
+            /// </summary>
+            public List<KeyValuePair<int, Item>> Whole(Container container)
+            {
+                List<KeyValuePair<int, Item>> content = Content(container);
+                told = Fingerprints(content);
+                return content;
+            }
+
+            /// <summary>The window's slots the host is told about (its own and the player section), empty ones left out.</summary>
+            private List<KeyValuePair<int, Item>> Content(Container container) => container.Items
+                .Where(entry => entry.Key >= 0 && entry.Key < Total && !entry.Value.IsEmpty)
+                .OrderBy(entry => entry.Key)
+                .ToList();
+
+            private static Dictionary<int, string> Fingerprints(List<KeyValuePair<int, Item>> content) =>
+                content.ToDictionary(entry => entry.Key, entry => AgentBridgeItems.Fingerprint(entry.Value));
         }
 
         public override void Initialize()
@@ -684,32 +737,8 @@ namespace MinecraftClient.ChatBots
             if (!Reports(EventGroups.Windows))
                 return;
 
-            Dictionary<int, string> current = new();
-            foreach ((int slot, Item item) in container.Items)
-            {
-                if (slot >= 0 && slot < open.Total && !item.IsEmpty)
-                    current[slot] = AgentBridgeItems.Fingerprint(item);
-            }
-
-            if (!open.ContentSent)
-            {
-                open.ContentSent = true;
-                open.Fingerprints = current;
-                EmitWindowItems(open, container);
-                return;
-            }
-
-            List<int> changed = current.Keys.Union(open.Fingerprints.Keys)
-                .Where(slot => !current.TryGetValue(slot, out string? now)
-                               || !open.Fingerprints.TryGetValue(slot, out string? before)
-                               || now != before)
-                .Order()
-                .ToList();
-            open.Fingerprints = current;
-            if (changed.Count == 0)
-                return;
-
-            if (changed.Count > MaxSlotEventsPerUpdate)
+            List<int>? changed = open.Changes(container, MaxSlotEventsPerUpdate);
+            if (changed is null)
             {
                 EmitWindowItems(open, container);
                 return;
@@ -735,12 +764,10 @@ namespace MinecraftClient.ChatBots
             }
         }
 
+        /// <summary>The whole content (a report or a snapshot); the <c>win_slot</c> changes that follow are against it.</summary>
         private void EmitWindowItems(OpenWindow open, Container container)
         {
-            List<KeyValuePair<int, Item>> items = container.Items
-                .Where(entry => entry.Key >= 0 && entry.Key < open.Total && !entry.Value.IsEmpty)
-                .OrderBy(entry => entry.Key)
-                .ToList();
+            List<KeyValuePair<int, Item>> items = open.Whole(container);
             int stateId = container.StateID;
 
             channel.Emit("win_items", writer =>
