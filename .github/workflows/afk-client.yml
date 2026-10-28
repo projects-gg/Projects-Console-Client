@@ -60,12 +60,16 @@ jobs:
 
       # IncludeNativeLibrariesForSelfExtract=false and EnableCompressionInSingleFile=false come from
       # MinecraftClient.csproj (antivirus heuristics) and must not be overridden here.
+      # The Linux packages are ReadyToRun: the cloud runs many clients on one machine, and code compiled ahead of time
+      # is less to compile at every start and pages that every client shares (desktop packages stay as they were).
       - name: Publish (self-contained, single file)
         env:
           RID: ${{ matrix.rid }}
+          READY_TO_RUN: ${{ startsWith(matrix.rid, 'linux-') && 'true' || 'false' }}
         run: |
           dotnet publish MinecraftClient/MinecraftClient.csproj -c Release -r "$RID" \
             --self-contained true -p:PublishSingleFile=true -p:UseAppHost=true \
+            -p:PublishReadyToRun="$READY_TO_RUN" \
             -p:DebugType=None -p:DebugSymbols=false -o out
 
       - name: Rename the executable
