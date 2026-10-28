@@ -670,7 +670,11 @@ namespace MinecraftClient
 
             if (nextSneakingUpdate < DateTime.Now)
             {
-                if (world.GetBlock(new Location(location.X, location.Y + 1, location.Z)).IsTopSlab(protocolversion) && !IsSneaking)
+                // Without terrain the world has no blocks (every one reads as air): lean mode does not look, which would
+                // only build the block palette (LeanMode.LazyPalettes).
+                bool underSlab = (terrainAndMovementsEnabled || !LeanMode.LazyPalettes)
+                    && world.GetBlock(new Location(location.X, location.Y + 1, location.Z)).IsTopSlab(protocolversion);
+                if (underSlab && !IsSneaking)
                 {
                     isUnderSlab = true;
                     SendEntityAction(EntityActionType.StartSneaking);

@@ -3,6 +3,7 @@ using MinecraftClient.Mapping.BlockPalettes;
 
 namespace MinecraftClient.Tests;
 
+[Collection(BlockPaletteCollection.Name)]
 public sealed class BlockStatePropertiesTests
 {
     private readonly Palette262 _palette = new();

@@ -572,6 +572,26 @@ A new session starts idle and not sneaking; a disconnection ends what ran withou
 - The last gate (`agentgate.rs`) decides what may be sent; the bridge repeats the shape checks above as a second
   line, not instead of it.
 
+## Lean mode (client 4.2.2, `MCC_LEAN`)
+
+For many small and mostly idle clients on one machine. `MCC_LEAN=1` turns every part on, a comma separated list
+(`palettes,socket`) only the parts it names; unset, nothing changes. No part changes what the client does in game or
+shows; each skips work whose result nothing in a cloud profile reads:
+
+| Part | What the client skips |
+| --- | --- |
+| `palettes` | The block, entity and item palettes of a feature that is off (terrain and movements, entity handling, inventory handling) are built on first use instead of at every connect, and without terrain the client no longer looks for a top slab above its head every 300 ms (with no terrain every block reads as air; the look only built the block palette). A client with the feature on builds its palette at connect, as before |
+| `socket` | The packet reader no longer wakes every 10 ms to look for data: it waits on the socket (at most 100 ms, for cancellation) |
+| `book` | Advancements, their tab and the recipe book (`Advancements`, `SelectAdvancementTab`, `UnlockRecipes`, `RecipeBookAdd`, `RecipeBookRemove`, the legacy statistics) are neither parsed nor kept: the `/achievement` and `/recipebook` commands and a script's `GetAchievements()` see none |
+
+`MCC_LEAN_TRACE=1` (measurements only, never set by the host) writes one technical stderr line, with the first stack
+frames, when a palette left for later is built after all.
+
+Measured (28 Oct 2026, 26.3 on a local Canvas server, Linux container, the cloud profile; afk-host's runtime settings
+`MALLOC_ARENA_MAX=2`, `DOTNET_TieredCompilation=0` with the ReadyToRun package): 32.5 MiB of anonymous, shared JIT and
+kernel memory per client against 43-44 MiB for 4.2.1 with the earlier settings, linear from 1 to 30 clients; 0.67 % of
+a core per idle client against 0.84 %, 60 context switches a second against 140; 0.75 CPU seconds to join against 2.0.
+
 ## Compatibility
 
 - Without the two descriptor variables nothing of the agent bridge runs, and the only visible change for other
@@ -585,6 +605,8 @@ A new session starts idle and not sneaking; a disconnection ends what ran withou
   lore; tag names; item NBT before 1.20.5) are read and written as Java's modified UTF-8. Before, every character
   outside the Basic Multilingual Plane (an emoji in a chat prefix) arrived as six U+FFFD, and the client wrote NBT
   strings back as plain UTF-8.
+- Since 4.2.2: lean mode, only with `MCC_LEAN` (above). The Linux packages are published ReadyToRun (code compiled
+  ahead of time: less to compile at start, and code pages that all clients on a machine share).
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);
