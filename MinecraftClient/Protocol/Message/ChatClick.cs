@@ -119,7 +119,8 @@ namespace MinecraftClient.Protocol.Message
             }
         }
 
-        private static ChatClick? ReadNbtClick(Dictionary<string, object> click)
+        /// <summary>A click compound's action and value (uncut), or null without an action.</summary>
+        internal static ChatClick? ReadNbtClick(Dictionary<string, object> click)
         {
             if (!click.TryGetValue("action", out object? actionValue) || actionValue is not string action || action.Length == 0)
                 return null;
@@ -133,7 +134,8 @@ namespace MinecraftClient.Protocol.Message
             return new ChatClick(action, string.Empty);
         }
 
-        private static ChatClick? ReadJsonClick(JsonObject click)
+        /// <summary>A click object's action and value (uncut), or null without an action.</summary>
+        internal static ChatClick? ReadJsonClick(JsonObject click)
         {
             if (click["action"] is not JsonValue actionNode
                 || actionNode.GetValueKind() != JsonValueKind.String

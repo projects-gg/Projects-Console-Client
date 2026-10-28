@@ -50,9 +50,36 @@ namespace MinecraftClient.Protocol.Message
             Content
         }
 
-        internal sealed record ChatTypeDecoration(string TranslationKey, ChatTypeParameter[] Parameters);
+        /// <summary>
+        /// A chat type's decoration: its translation key, the parameters it fills it with and its style (an NBT
+        /// compound; the console looks walk it, client 4.2.4, the client's own text does not use it).
+        /// </summary>
+        internal sealed record ChatTypeDecoration(string TranslationKey, ChatTypeParameter[] Parameters,
+            Dictionary<string, object>? Style = null);
 
         private static readonly Dictionary<int, ChatTypeDecoration> ChatId2Decoration = new();
+
+        /// <summary>The decoration <see cref="ParseSignedChat"/> fills a signed message with, if any.</summary>
+        internal static ChatTypeDecoration? DecorationOf(ChatMessage message)
+        {
+            ChatTypeDecoration? decoration = message.chatTypeDecoration;
+            if (decoration is null)
+                ChatId2Decoration.TryGetValue(message.chatTypeId, out decoration);
+            return decoration;
+        }
+
+        /// <summary>
+        /// The message type <see cref="ParseSignedChat"/> formats a signed message without a decoration by; null when
+        /// the server sent no chat types at all.
+        /// </summary>
+        internal static MessageType? SignedChatType(ChatMessage message)
+        {
+            if (message.chatTypeId == -1)
+                return MessageType.RAW_MSG;
+            if (ChatId2Type is null)
+                return null;
+            return ChatId2Type.TryGetValue(message.chatTypeId, out MessageType chatType) ? chatType : MessageType.CHAT;
+        }
 
         internal static void ClearChatTypeDecorations()
         {
@@ -150,8 +177,8 @@ namespace MinecraftClient.Protocol.Message
             for (int i = 0; i < parameterCount; i++)
                 parameters[i] = (ChatTypeParameter)dataTypes.ReadNextVarInt(packetData);
 
-            _ = dataTypes.ReadNextNbtTag(packetData); // Style
-            return new ChatTypeDecoration(translationKey, parameters);
+            object? style = dataTypes.ReadNextNbtTag(packetData);
+            return new ChatTypeDecoration(translationKey, parameters, style as Dictionary<string, object>);
         }
 
         private static bool TryReadChatTypeDecoration(
@@ -180,7 +207,8 @@ namespace MinecraftClient.Protocol.Message
                 };
             }
 
-            decoration = new ChatTypeDecoration(translationKeyText, parsedParameters);
+            decoration = new ChatTypeDecoration(translationKeyText, parsedParameters,
+                chatDecoration.TryGetValue("style", out var style) ? style as Dictionary<string, object> : null);
             return true;
         }
 
@@ -697,6 +725,83 @@ namespace MinecraftClient.Protocol.Message
             }
 
             return result.ToString();
+        }
+
+        /// <summary>
+        /// The rule <see cref="TranslateString(string, List{string})"/> fills for <paramref name="rulename"/>: the
+        /// translation, or the key itself when none is known (console looks, client 4.2.4).
+        /// </summary>
+        internal static string TranslationRule(string rulename)
+        {
+            if (!RulesInitialized)
+            {
+                InitRules();
+                RulesInitialized = true;
+            }
+
+            return TryGetTranslationRule(rulename, out string? rule) ? rule : rulename;
+        }
+
+        /// <summary>A piece of a filled rule: literal text, or (when <see cref="Text"/> is null) an argument's index.</summary>
+        internal readonly record struct TranslationPiece(string? Text, int Argument);
+
+        /// <summary>
+        /// <paramref name="rule"/> cut where <see cref="TranslateString(string, List{string})"/> puts its
+        /// <paramref name="arguments"/> arguments, by the same rules and in the same order: the pieces joined, each
+        /// argument's text in its place, are that method's text. Null where that method fails (<c>%0$s</c>).
+        /// </summary>
+        internal static List<TranslationPiece>? TranslationPieces(string rule, int arguments)
+        {
+            List<TranslationPiece> pieces = [];
+            StringBuilder literal = new();
+
+            void Flush()
+            {
+                if (literal.Length == 0)
+                    return;
+                pieces.Add(new TranslationPiece(literal.ToString(), -1));
+                literal.Clear();
+            }
+
+            int using_idx = 0;
+            for (int i = 0; i < rule.Length; i++)
+            {
+                if (rule[i] == '%' && i + 1 < rule.Length)
+                {
+                    if (rule[i + 1] == 's' || rule[i + 1] == 'd')
+                    {
+                        if (arguments > using_idx)
+                        {
+                            Flush();
+                            pieces.Add(new TranslationPiece(null, using_idx));
+                            using_idx++;
+                            i += 1;
+                            continue;
+                        }
+                    }
+                    else if (char.IsDigit(rule[i + 1])
+                             && i + 3 < rule.Length && rule[i + 2] == '$'
+                             && (rule[i + 3] == 's' || rule[i + 3] == 'd'))
+                    {
+                        int specified_idx = rule[i + 1] - '1';
+                        if (arguments > specified_idx)
+                        {
+                            if (specified_idx < 0)
+                                return null;
+                            Flush();
+                            pieces.Add(new TranslationPiece(null, specified_idx));
+                            using_idx++;
+                            i += 3;
+                            continue;
+                        }
+                    }
+                }
+
+                literal.Append(rule[i]);
+            }
+
+            Flush();
+            return pieces;
         }
 
         private static bool TryGetTranslationRule(string rulename, [NotNullWhen(true)] out string? result)

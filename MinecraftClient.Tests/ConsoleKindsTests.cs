@@ -80,7 +80,9 @@ public sealed class ConsoleKindsTests : IDisposable
             ((string)events[0]["e"]!, (string)events[0]["src"]!, (string)events[0]["text"]!));
         Assert.Equal(("error", "[ERROR] Bağlantı koptu"), ((string)events[1]["src"]!, (string)events[1]["text"]!));
         Assert.Equal("client", (string)events[2]["src"]!);
-        Assert.Equal(3, events[0].Count); // e, src, text: nothing else for the client's own lines
+        // e, src, text and (client 4.2.4) st, the looks of its formatting codes: nothing else for the client's own lines.
+        Assert.Equal(4, events[0].Count);
+        Assert.Equal("[[28,\"8\"]]", events[0]["st"]!.ToJsonString());
     }
 
     [Fact]

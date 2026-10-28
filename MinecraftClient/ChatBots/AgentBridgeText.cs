@@ -11,7 +11,8 @@ using MinecraftClient.Protocol.Message;
 namespace MinecraftClient.ChatBots
 {
     /// <summary>
-    /// How the game's tooltip draws an item's name and lore (docs/agent-bridge.md, "Client 4.2.3"): the text component
+    /// How the game draws a text: an item's name and lore (docs/agent-bridge.md, "Client 4.2.3") and a console line
+    /// ("Client 4.2.4: console line looks", <see cref="ConsoleLooks"/>). For items, the text component
     /// walked the way the game styles it, written as spans over the plain text the bridge writes anyway
     /// (<c>nameStyle</c>, <c>itemNameStyle</c>, <c>loreStyle</c>). A span is <c>[length, code]</c>: its length in UTF-16
     /// code units and its look, a colour (<c>0</c>–<c>f</c>, or <c>#rrggbb</c>; none: the field's own colour) and then
@@ -116,18 +117,53 @@ namespace MinecraftClient.ChatBots
 
         private static bool IsHexDigit(char c) => c is >= '0' and <= '9' or >= 'a' and <= 'f';
 
-        private sealed class Walk
+        /// <summary>
+        /// A piece of a composed text that is text already (a signed message's plain content, a name the client rendered
+        /// itself): walked as a literal with formatting codes, never read as JSON.
+        /// </summary>
+        internal sealed record PlainText(string Text);
+
+        /// <summary>
+        /// A part's hover as the server set it (client 4.2.4, console looks): the hover compound or object of the
+        /// component that has it, shared by reference with the parts that inherit it. <see cref="Modern"/>: the 1.21.5+
+        /// <c>hover_event</c> (its fields inline) rather than <c>hoverEvent</c> (<c>contents</c>, or <c>value</c>).
+        /// </summary>
+        internal sealed class HoverRef(object node, bool modern)
         {
-            public readonly List<(string Text, Look Look)> Runs = [];
-            public bool TooDeep;
+            public object Node { get; } = node;
+            public bool Modern { get; } = modern;
+        }
+
+        /// <summary>
+        /// A part's click and hover (client 4.2.4, console looks): its own, else its parent's, each on its own (the game's
+        /// <c>Style.applyTo</c>). A click of an action the console never reports still hides the parent's.
+        /// </summary>
+        internal sealed record PartEvent(ChatClick? Click, HoverRef? Hover);
+
+        /// <summary>A click that hides its parent's and is never reported (no action, or one that does not read).</summary>
+        private static readonly ChatClick NoClick = new(string.Empty, string.Empty);
+
+        /// <summary>Most runs one walk keeps; a text of more parts is written without a look.</summary>
+        private const int MaxRuns = 16384;
+
+        internal sealed class Walk(bool events = false)
+        {
+            public readonly List<(string Text, Look Look, PartEvent? Event)> Runs = [];
+
+            /// <summary>
+            /// The walk cannot stand for the text: nesting deeper than <see cref="MaxDepth"/>, more than
+            /// <see cref="MaxRuns"/> parts, or a translation ChatParser cannot fill.
+            /// </summary>
+            public bool Failed;
 
             /// <summary>
             /// A literal with the game's formatting codes taken out and applied (<c>StringDecomposer</c>): a colour code
             /// sets the colour and turns every flag off, a flag code turns its flag on, <c>§r</c> goes back to the
-            /// literal's own look. Which characters a code takes is <c>ChatBot.GetVerbatim</c>'s rule (MCC's
-            /// <c>§#rrggbb</c> included), so the text stays the bridge's plain text.
+            /// literal's own look; the part's click and hover stay (<c>Style.applyLegacyFormat</c>). Which characters a
+            /// code takes is <c>ChatBot.GetVerbatim</c>'s rule (MCC's <c>§#rrggbb</c> included), so the text stays the
+            /// bridge's plain text.
             /// </summary>
-            public void Literal(string text, Look look)
+            public void Literal(string text, Look look, PartEvent? ev = null)
             {
                 Look current = look;
                 StringBuilder part = new();
@@ -166,37 +202,82 @@ namespace MinecraftClient.ChatBots
 
                     if (next != current)
                     {
-                        Flush(part, current);
+                        Flush(part, current, ev);
                         current = next;
                     }
                 }
 
-                Flush(part, current);
+                Flush(part, current, ev);
             }
 
-            private void Flush(StringBuilder part, Look look)
+            private void Flush(StringBuilder part, Look look, PartEvent? ev)
             {
                 if (part.Length == 0)
                     return;
-                Runs.Add((part.ToString(), look));
+                if (Runs.Count >= MaxRuns)
+                {
+                    Failed = true;
+                }
+                else
+                {
+                    Runs.Add((part.ToString(), look, ev));
+                }
+
                 part.Clear();
             }
 
-            /// <summary>The plain text of a part (a translation's argument), walked on its own.</summary>
-            public string PlainOf(Action<Walk> walk)
+            /// <summary>
+            /// A translation: its rule cut where ChatParser puts the arguments, each argument walked in its own look
+            /// over the component's (the game's <c>TranslatableContents</c>); the text stays ChatParser's.
+            /// </summary>
+            private void Translate(string key, int arguments, Look look, PartEvent? ev, Action<int> argument)
             {
-                Walk inner = new();
-                walk(inner);
-                TooDeep |= inner.TooDeep;
-                return string.Concat(inner.Runs.Select(run => run.Text));
+                List<ChatParser.TranslationPiece>? pieces =
+                    ChatParser.TranslationPieces(ChatParser.TranslationRule(key), arguments);
+                if (pieces is null)
+                {
+                    Failed = true;
+                    return;
+                }
+
+                foreach (ChatParser.TranslationPiece piece in pieces)
+                {
+                    if (piece.Text is not null)
+                        Literal(piece.Text, look, ev);
+                    else
+                        argument(piece.Argument);
+                }
+            }
+
+            /// <summary>
+            /// A translation over pieces of a composed line (a chat type's decoration): each argument is an NBT tree,
+            /// JSON text or <see cref="PlainText"/>, walked over <paramref name="look"/>.
+            /// </summary>
+            public void Translate(string key, IReadOnlyList<object?> arguments, Look look)
+            {
+                Translate(key, arguments.Count, look, null, i => Piece(arguments[i], look, null, 1));
+            }
+
+            /// <summary>One piece of a composed line: an NBT tree, JSON text (a string) or <see cref="PlainText"/>.</summary>
+            public void Piece(object? raw, Look parent, PartEvent? parentEvent, int depth)
+            {
+                switch (raw)
+                {
+                    case string json:
+                        Json(global::MinecraftClient.Json.ParseJson(json), parent, parentEvent, depth);
+                        return;
+                    default:
+                        Nbt(raw, parent, parentEvent, depth);
+                        return;
+                }
             }
 
             /// <summary>An NBT text component (1.20.3+), as ChatParser.NbtToString reads it.</summary>
-            public void Nbt(object? node, Look parent, int depth)
+            public void Nbt(object? node, Look parent, PartEvent? parentEvent, int depth)
             {
                 if (depth > MaxDepth)
                 {
-                    TooDeep = true;
+                    Failed = true;
                     return;
                 }
 
@@ -205,39 +286,55 @@ namespace MinecraftClient.ChatBots
                     case Dictionary<string, object> nbt:
                         if (nbt.Count == 1 && nbt.TryGetValue("", out object? root))
                         {
-                            Literal(root?.ToString() ?? string.Empty, parent);
+                            Literal(root?.ToString() ?? string.Empty, parent, parentEvent);
                             return;
                         }
 
                         Look look = OwnNbt(nbt).Over(parent);
-                        string message = nbt.TryGetValue("text", out object? text) ? text?.ToString() ?? string.Empty : string.Empty;
+                        PartEvent? ev = events ? NbtEvent(nbt, parentEvent) : null;
                         if (nbt.TryGetValue("translate", out object? translate) && translate is string key)
                         {
-                            List<string> args = [];
-                            if (nbt.TryGetValue("with", out object? withValue) && withValue is object[] withs)
-                            {
-                                foreach (object arg in withs)
-                                    args.Add(PlainOf(walk => walk.Nbt(Part(arg), look, depth + 1)));
-                            }
-
-                            message = ChatParser.TranslateString(key, args);
+                            object[] withs = nbt.TryGetValue("with", out object? withValue) && withValue is object[] list
+                                ? list
+                                : [];
+                            Translate(key, withs.Length, look, ev, i => Nbt(Part(withs[i]), look, ev, depth + 1));
+                        }
+                        else
+                        {
+                            Literal(nbt.TryGetValue("text", out object? text) ? text?.ToString() ?? string.Empty : string.Empty,
+                                look, ev);
                         }
 
-                        Literal(message, look);
                         if (nbt.TryGetValue("extra", out object? extra) && extra is object[] extras)
                         {
                             foreach (object part in extras)
-                                Nbt(Part(part), look, depth + 1);
+                                Nbt(Part(part), look, ev, depth + 1);
                         }
 
                         return;
+                    case object[] parts:
+                        // A list is its first part with the others after it, as that part's extras (as JSON's).
+                        Look first = parent;
+                        PartEvent? firstEvent = parentEvent;
+                        if (parts.Length > 0 && parts[0] is Dictionary<string, object> head)
+                        {
+                            first = OwnNbt(head).Over(parent);
+                            firstEvent = events ? NbtEvent(head, parentEvent) : null;
+                        }
+
+                        for (int i = 0; i < parts.Length; i++)
+                            Nbt(Part(parts[i]), i == 0 ? parent : first, i == 0 ? parentEvent : firstEvent, depth + 1);
+                        return;
                     case string literal:
-                        Literal(literal, parent);
+                        Literal(literal, parent, parentEvent);
+                        return;
+                    case PlainText plain:
+                        Literal(plain.Text, parent, parentEvent);
                         return;
                     case null:
                         return;
                     default:
-                        Literal(Convert.ToString(node, CultureInfo.InvariantCulture) ?? string.Empty, parent);
+                        Literal(Convert.ToString(node, CultureInfo.InvariantCulture) ?? string.Empty, parent, parentEvent);
                         return;
                 }
             }
@@ -250,7 +347,60 @@ namespace MinecraftClient.ChatBots
                 _ => part,
             };
 
-            private static Look OwnNbt(Dictionary<string, object> nbt)
+            /// <summary>
+            /// A 1.21.5+ click (<c>click_event</c>): its <c>run_command</c> may leave out the <c>/</c> the game adds
+            /// (<c>Commands.trimOptionalPrefix</c>); with it, the command reads as every other.
+            /// </summary>
+            private static ChatClick? Modern(ChatClick? click) =>
+                click is { Action: "run_command", Value: { Length: > 0 } command } found && command[0] != '/'
+                    ? found with { Value = "/" + command }
+                    : click;
+
+            private static PartEvent? NbtEvent(Dictionary<string, object> nbt, PartEvent? parent)
+            {
+                ChatClick? click = parent?.Click;
+                if (nbt.TryGetValue("click_event", out object? modern) && modern is Dictionary<string, object> modernClick)
+                    click = Modern(ChatClicks.ReadNbtClick(modernClick)) ?? NoClick;
+                else if (nbt.TryGetValue("clickEvent", out object? legacy) && legacy is Dictionary<string, object> legacyClick)
+                    click = ChatClicks.ReadNbtClick(legacyClick) ?? NoClick;
+
+                HoverRef? hover = parent?.Hover;
+                if (nbt.TryGetValue("hover_event", out object? modernHover) && modernHover is Dictionary<string, object> m)
+                    hover = new HoverRef(m, true);
+                else if (nbt.TryGetValue("hoverEvent", out object? legacyHover) && legacyHover is Dictionary<string, object> l)
+                    hover = new HoverRef(l, false);
+
+                return Event(click, hover, parent);
+            }
+
+            private static PartEvent? JsonEvent(JsonObject obj, PartEvent? parent)
+            {
+                ChatClick? click = parent?.Click;
+                if (obj["click_event"] is JsonObject modernClick)
+                    click = Modern(ChatClicks.ReadJsonClick(modernClick)) ?? NoClick;
+                else if (obj["clickEvent"] is JsonObject legacyClick)
+                    click = ChatClicks.ReadJsonClick(legacyClick) ?? NoClick;
+
+                HoverRef? hover = parent?.Hover;
+                if (obj["hover_event"] is JsonObject modernHover)
+                    hover = new HoverRef(modernHover, true);
+                else if (obj["hoverEvent"] is JsonObject legacyHover)
+                    hover = new HoverRef(legacyHover, false);
+
+                return Event(click, hover, parent);
+            }
+
+            private static PartEvent? Event(ChatClick? click, HoverRef? hover, PartEvent? parent)
+            {
+                if (click is null && hover is null)
+                    return null;
+                if (parent is not null && parent.Click == click && ReferenceEquals(parent.Hover, hover))
+                    return parent;
+                return new PartEvent(click, hover);
+            }
+
+            /// <summary>A text component's own look, from its NBT compound (also a chat type decoration's style).</summary>
+            internal static Look OwnNbt(Dictionary<string, object> nbt)
             {
                 static bool? Flag(Dictionary<string, object> nbt, string key) =>
                     nbt.TryGetValue(key, out object? value)
@@ -272,11 +422,11 @@ namespace MinecraftClient.ChatBots
             }
 
             /// <summary>A JSON text component (before 1.20.3; legacy text too), as ChatParser.JSONData2String reads it.</summary>
-            public void Json(JsonNode? node, Look parent, int depth)
+            public void Json(JsonNode? node, Look parent, PartEvent? parentEvent, int depth)
             {
                 if (depth > MaxDepth)
                 {
-                    TooDeep = true;
+                    Failed = true;
                     return;
                 }
 
@@ -284,37 +434,40 @@ namespace MinecraftClient.ChatBots
                 {
                     case JsonObject obj:
                         Look look = OwnJson(obj).Over(parent);
+                        PartEvent? ev = events ? JsonEvent(obj, parentEvent) : null;
                         if (obj.ContainsKey("text"))
                         {
-                            Json(obj["text"], look, depth + 1);
+                            Json(obj["text"], look, ev, depth + 1);
                         }
                         else if (obj.ContainsKey("translate"))
                         {
-                            List<string> args = [];
-                            if ((obj["with"] ?? obj["using"]) is JsonArray withs)
-                            {
-                                foreach (JsonNode? arg in withs)
-                                    args.Add(PlainOf(walk => walk.Json(arg, look, depth + 1)));
-                            }
-
-                            Literal(ChatParser.TranslateString(obj["translate"].GetStringValue(), args), look);
+                            JsonArray? withs = (obj["with"] ?? obj["using"]) as JsonArray;
+                            Translate(obj["translate"].GetStringValue(), withs?.Count ?? 0, look, ev,
+                                i => Json(withs![i], look, ev, depth + 1));
                         }
 
                         if (obj["extra"] is JsonArray extras)
                         {
                             foreach (JsonNode? part in extras)
-                                Json(part, look, depth + 1);
+                                Json(part, look, ev, depth + 1);
                         }
 
                         return;
                     case JsonArray array:
                         // The game reads a list as its first part with the others after it, as that part's extras.
-                        Look first = array.Count > 0 && array[0] is JsonObject head ? OwnJson(head).Over(parent) : parent;
+                        Look first = parent;
+                        PartEvent? firstEvent = parentEvent;
+                        if (array.Count > 0 && array[0] is JsonObject head)
+                        {
+                            first = OwnJson(head).Over(parent);
+                            firstEvent = events ? JsonEvent(head, parentEvent) : null;
+                        }
+
                         for (int i = 0; i < array.Count; i++)
-                            Json(array[i], i == 0 ? parent : first, depth + 1);
+                            Json(array[i], i == 0 ? parent : first, i == 0 ? parentEvent : firstEvent, depth + 1);
                         return;
                     default:
-                        Literal(node.GetStringValue(), parent);
+                        Literal(node.GetStringValue(), parent, parentEvent);
                         return;
                 }
             }
@@ -342,6 +495,49 @@ namespace MinecraftClient.ChatBots
         }
 
         /// <summary>
+        /// A walk's runs as spans over <paramref name="plain"/>, the bridge's plain text of the same text: each run as
+        /// <c>Plain()</c> writes text (one line, well-formed), adjacent runs of one code and one event as one. Null when
+        /// the runs, cut by <paramref name="cut"/>, do not come to exactly that text. A cut text's last spans cover what is
+        /// left of it, an ellipsis included.
+        /// </summary>
+        internal static List<(int Length, string Code, PartEvent? Event)>? SpanRuns(Walk walk, string plain,
+            Func<string, string> cut)
+        {
+            if (walk.Failed || plain.Length == 0)
+                return null;
+
+            StringBuilder joined = new();
+            List<(int Length, string Code, PartEvent? Event)> raw = [];
+            foreach ((string text, Look look, PartEvent? ev) in walk.Runs)
+            {
+                string shown = AgentBridgeItems.WellFormed(ConsoleIO.KeepOnOneLine(text));
+                if (shown.Length == 0)
+                    continue;
+                joined.Append(shown);
+                raw.Add((shown.Length, look.Code(), ev));
+            }
+
+            if (!string.Equals(cut(joined.ToString()), plain, StringComparison.Ordinal))
+                return null;
+
+            List<(int Length, string Code, PartEvent? Event)> spans = [];
+            int left = plain.Length;
+            foreach ((int length, string code, PartEvent? ev) in raw)
+            {
+                int take = Math.Min(length, left);
+                if (spans.Count > 0 && spans[^1].Code == code && Equals(spans[^1].Event, ev))
+                    spans[^1] = (spans[^1].Length + take, code, ev);
+                else
+                    spans.Add((take, code, ev));
+                left -= take;
+                if (left == 0)
+                    break;
+            }
+
+            return spans;
+        }
+
+        /// <summary>
         /// The spans of <paramref name="component"/> (an NBT text component; or a JSON or legacy text, as the NBT of
         /// versions before 1.20.5 keeps it) starting from <paramref name="look"/>, over <paramref name="plain"/>: the
         /// bridge's plain text of the same component. Null when the walk does not come to exactly that text, when one look
@@ -349,58 +545,44 @@ namespace MinecraftClient.ChatBots
         /// </summary>
         public static List<(int Length, string Code)>? Spans(object? component, Look look, string plain)
         {
-            if (plain.Length == 0)
-                return null;
-
             Walk walk = new();
             switch (component)
             {
                 case Dictionary<string, object> nbt:
-                    walk.Nbt(nbt, look, 0);
+                    walk.Nbt(nbt, look, null, 0);
                     break;
                 case string text:
-                    walk.Json(global::MinecraftClient.Json.ParseJson(text), look, 0);
+                    walk.Json(global::MinecraftClient.Json.ParseJson(text), look, null, 0);
                     break;
                 default:
                     return null;
             }
 
-            if (walk.TooDeep)
+            return Merged(SpanRuns(walk, plain, joined => AgentBridgeItems.Cut(joined, AgentBridgeItems.MaxTextLength)),
+                MaxSpans);
+        }
+
+        /// <summary>
+        /// Spans of one code each, adjacent ones of one code as one (events left out); null for none, for one span of
+        /// the field's own look, or past <paramref name="max"/> spans.
+        /// </summary>
+        internal static List<(int Length, string Code)>? Merged(List<(int Length, string Code, PartEvent? Event)>? runs,
+            int max)
+        {
+            if (runs is null)
                 return null;
-
-            // The runs as Plain() writes text: one line, well-formed, cut where Plain() cuts.
-            StringBuilder joined = new();
-            List<(int Length, string Code)> raw = [];
-            foreach ((string text, Look part) in walk.Runs)
-            {
-                string shown = AgentBridgeItems.WellFormed(ConsoleIO.KeepOnOneLine(text));
-                if (shown.Length == 0)
-                    continue;
-                joined.Append(shown);
-                raw.Add((shown.Length, part.Code()));
-            }
-
-            if (!string.Equals(AgentBridgeItems.Cut(joined.ToString(), AgentBridgeItems.MaxTextLength), plain,
-                    StringComparison.Ordinal))
-                return null;
-
             List<(int Length, string Code)> spans = [];
-            int left = plain.Length;
-            foreach ((int length, string code) in raw)
+            foreach ((int length, string code, _) in runs)
             {
-                int take = Math.Min(length, left);
                 if (spans.Count > 0 && spans[^1].Code == code)
-                    spans[^1] = (spans[^1].Length + take, code);
+                    spans[^1] = (spans[^1].Length + length, code);
                 else
-                    spans.Add((take, code));
-                left -= take;
-                if (left == 0)
-                    break;
+                    spans.Add((length, code));
             }
 
-            if (spans.Count == 1 && spans[0].Code.Length == 0)
+            if (spans.Count == 0 || (spans.Count == 1 && spans[0].Code.Length == 0))
                 return null;
-            return spans.Count <= MaxSpans ? spans : null;
+            return spans.Count <= max ? spans : null;
         }
 
         /// <summary>Writes spans as <c>[[length, code], ...]</c>.</summary>

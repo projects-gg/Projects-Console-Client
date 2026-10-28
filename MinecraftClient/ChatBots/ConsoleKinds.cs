@@ -87,12 +87,13 @@ namespace MinecraftClient.ChatBots
             public void Dispose() => source = previous;
         }
 
-        /// <summary>One console write (the client's own text), as it would be printed.</summary>
+        /// <summary>One console write (the client's own text), as it would be printed; its looks from its formatting codes.</summary>
         public static void WriteConsole(string printed)
         {
             string text = Plain(printed, MaxTextLength);
             if (text.Length > 0)
-                Output(LinePrefix + LineEvent(source ?? SourceClient, text));
+                Output(LinePrefix + LineEvent(source ?? SourceClient, text,
+                    looks: Looks(() => ConsoleLooks.OfText(printed, text))));
         }
 
         /// <summary>
@@ -106,15 +107,20 @@ namespace MinecraftClient.ChatBots
                 return;
 
             ChatSource seen = Describe(message, messageText, playerName, ChatParser.ChatTypeName);
-            Output(LinePrefix + LineEvent(seen.Src, text, seen.Ct, seen.Who, seen.Guess));
+            Output(LinePrefix + LineEvent(seen.Src, text, seen.Ct, seen.Who, seen.Guess,
+                Looks(() => ConsoleLooks.OfChat(message, messageText, text))));
         }
 
-        /// <summary>A title or subtitle (empty texts clear the screen and are not reported).</summary>
-        public static void WriteTitle(bool subtitle, string? title)
+        /// <summary>
+        /// A title or subtitle (empty texts clear the screen and are not reported); <paramref name="raw"/>, its component
+        /// as the server sent it, when the protocol read one.
+        /// </summary>
+        public static void WriteTitle(bool subtitle, string? title, object? raw = null)
         {
             string text = Plain(title, MaxTextLength);
             if (text.Length > 0)
-                Output(LinePrefix + LineEvent(subtitle ? SourceSubtitle : SourceTitle, text));
+                Output(LinePrefix + LineEvent(subtitle ? SourceSubtitle : SourceTitle, text,
+                    looks: Looks(() => ConsoleLooks.OfRaw(raw, title, text))));
         }
 
         /// <summary>The action bar of the protocols that send it apart from chat.</summary>
@@ -122,7 +128,27 @@ namespace MinecraftClient.ChatBots
         {
             string text = Plain(actionBar, MaxTextLength);
             if (text.Length > 0)
-                Output(LinePrefix + LineEvent(SourceOverlay, text));
+                Output(LinePrefix + LineEvent(SourceOverlay, text,
+                    looks: Looks(() => ConsoleLooks.OfText(actionBar, text))));
+        }
+
+        /// <summary>
+        /// <paramref name="raw"/> (a text component as the server sent it) while the console kinds are on, for the line's
+        /// looks; null otherwise, so nothing is kept that nobody reads.
+        /// </summary>
+        internal static object? Keep(object? raw) => Enabled ? raw : null;
+
+        /// <summary>A line's looks; none when working them out fails (the line itself is written all the same).</summary>
+        private static ConsoleLooks.Result? Looks(Func<ConsoleLooks.Result?> looks)
+        {
+            try
+            {
+                return looks();
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                return null;
+            }
         }
 
         /// <summary>A change of a boss bar (nothing for changes the host does not show, such as its flags).</summary>
@@ -210,7 +236,8 @@ namespace MinecraftClient.ChatBots
             return plain.Length > 0 ? plain : null;
         }
 
-        internal static string LineEvent(string src, string text, string? ct = null, string? who = null, string? guess = null)
+        internal static string LineEvent(string src, string text, string? ct = null, string? who = null, string? guess = null,
+            ConsoleLooks.Result? looks = null)
         {
             return Json(writer =>
             {
@@ -223,6 +250,16 @@ namespace MinecraftClient.ChatBots
                     writer.WriteString("who", who);
                 if (guess is not null)
                     writer.WriteString("guess", guess);
+                if (looks is null)
+                    return;
+                // Client 4.2.4: the line's looks (docs/agent-bridge.md, "Client 4.2.4: console line looks").
+                writer.WritePropertyName("st");
+                writer.WriteRawValue(looks.Spans, skipInputValidation: true);
+                if (looks.Events is not null)
+                {
+                    writer.WritePropertyName("ev");
+                    writer.WriteRawValue(looks.Events, skipInputValidation: true);
+                }
             });
         }
 
@@ -261,7 +298,15 @@ namespace MinecraftClient.ChatBots
         /// </summary>
         internal static string Plain(string? text, int maxLength)
         {
-            string plain = AgentBridgeItems.WellFormed(ConsoleIO.KeepOnOneLine(ChatBot.GetVerbatim(text)));
+            return CutLine(AgentBridgeItems.WellFormed(ConsoleIO.KeepOnOneLine(ChatBot.GetVerbatim(text))), maxLength);
+        }
+
+        /// <summary>
+        /// <paramref name="plain"/> at most <paramref name="maxLength"/> code units: a longer text is cut and ends with
+        /// "…", never between the halves of a surrogate pair.
+        /// </summary>
+        internal static string CutLine(string plain, int maxLength)
+        {
             if (plain.Length <= maxLength)
                 return plain;
 
