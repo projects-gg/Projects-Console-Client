@@ -347,7 +347,7 @@ namespace MinecraftClient.ChatBots
 
         private static bool WriteLegacyNbt(Utf8JsonWriter writer, Item item, Dictionary<string, object> nbt)
         {
-            Dictionary<string, object>? displayTag = nbt.TryGetValue("display", out object? displayValue)
+            Dictionary<string, object>? displayNbt = nbt.TryGetValue("display", out object? displayValue)
                 ? displayValue as Dictionary<string, object>
                 : null;
             string? displayName = item.DisplayName;
@@ -355,13 +355,13 @@ namespace MinecraftClient.ChatBots
             {
                 string name = Plain(displayName);
                 writer.WriteString("name", name);
-                WriteStyle(writer, "nameStyle", displayTag?.GetValueOrDefault("Name") as string,
+                WriteStyle(writer, "nameStyle", displayNbt?.GetValueOrDefault("Name") as string,
                     AgentBridgeText.Look.CustomName, name);
             }
 
             if (item.Lores is { Length: > 0 } lores)
             {
-                object[] rawLines = displayTag?.GetValueOrDefault("Lore") as object[] ?? [];
+                object[] rawLines = displayNbt?.GetValueOrDefault("Lore") as object[] ?? [];
                 WriteLore(writer, lores, rawLines.Select(line => line as string).ToList<object?>());
             }
 

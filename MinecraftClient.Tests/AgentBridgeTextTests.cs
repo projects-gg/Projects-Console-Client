@@ -46,7 +46,7 @@ public sealed class AgentBridgeTextTests
     [Fact]
     public void AHeadCarriesItsSkinHash()
     {
-        string value = Textures($$"""{"timestamp":1,"textures":{"SKIN":{"url":"http://textures.minecraft.net/texture/{{Hash}}"}}}""");
+        string value = Textures("{\"timestamp\":1,\"textures\":{\"SKIN\":{\"url\":\"http://textures.minecraft.net/texture/" + Hash + "\"}}}");
         JsonObject json = Render(Head(new ProfileProperty("textures", value, true, "sig")));
 
         Assert.Equal(Hash, (string)json["skin"]!);
@@ -68,7 +68,7 @@ public sealed class AgentBridgeTextTests
     public void HeadPluginsBase64AndLenientPayloadsRead()
     {
         // URL-safe, unpadded, with a line break, keys without quotes (some head plugins write these).
-        string lenient = Textures($$"""{textures:{SKIN:{url:"https://textures.minecraft.net/texture/{{Hash.ToUpperInvariant()}}"}}}""");
+        string lenient = Textures("{textures:{SKIN:{url:\"https://textures.minecraft.net/texture/" + Hash.ToUpperInvariant() + "\"}}}");
         string mangled = lenient.TrimEnd('=').Replace('+', '-').Replace('/', '_').Insert(8, "\n");
 
         Assert.Equal(Hash, AgentBridgeText.SkinHash(mangled));
@@ -212,7 +212,7 @@ public sealed class AgentBridgeTextTests
                     {
                         new Dictionary<string, object>
                         {
-                            ["Value"] = Textures($$"""{"textures":{"SKIN":{"url":"https://textures.minecraft.net/texture/{{Hash}}"}}}"""),
+                            ["Value"] = Textures("{\"textures\":{\"SKIN\":{\"url\":\"https://textures.minecraft.net/texture/" + Hash + "\"}}}"),
                         },
                     },
                 },
