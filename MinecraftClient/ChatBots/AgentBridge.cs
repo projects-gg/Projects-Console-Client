@@ -26,6 +26,9 @@ namespace MinecraftClient.ChatBots
         /// <summary>Contract version, sent in "hello".</summary>
         public const int ProtocolVersion = 2;
 
+        /// <summary>The version "hello" says to a host that asked for movement (<see cref="AgentMovement.MoveEnvVar"/>).</summary>
+        public const int MovementProtocolVersion = 3;
+
         /// <summary>
         /// Comma-separated event groups the host wants (<c>chat</c>, <c>players</c>, <c>inv</c>, <c>win</c>,
         /// <c>held</c>, <c>pos</c>); the others are not even turned into JSON. Unset: every group.
@@ -44,6 +47,9 @@ namespace MinecraftClient.ChatBots
             Held = 16,
             Position = 32,
             All = Chat | Players | Inventory | Windows | Held | Position,
+
+            /// <summary>Version 3's <c>move</c> events: only with <see cref="AgentMovement.MoveEnvVar"/>, never in <c>All</c>.</summary>
+            Movement = 64,
         }
 
         /// <summary>The groups <paramref name="value"/> names (unknown names count for nothing); null: all of them.</summary>
@@ -70,7 +76,12 @@ namespace MinecraftClient.ChatBots
             return groups;
         }
 
-        private static readonly EventGroups reportedGroups = ParseEventGroups(Environment.GetEnvironmentVariable(EventsEnvVar));
+        /// <summary>The groups named, plus <c>pos</c> and <c>move</c> for a host that asked for movement.</summary>
+        internal static EventGroups ReportedGroups(string? events, bool movement) =>
+            ParseEventGroups(events) | (movement ? EventGroups.Position | EventGroups.Movement : EventGroups.None);
+
+        private static readonly EventGroups reportedGroups =
+            ReportedGroups(Environment.GetEnvironmentVariable(EventsEnvVar), AgentMovement.Enabled);
 
         /// <summary>
         /// A host that names event groups speaks version 2: window content is reported once a tick, and after the
@@ -92,7 +103,7 @@ namespace MinecraftClient.ChatBots
         private const int InventoryDebounceTicks = 5;
         private const int MaxPlayers = 200;
         private const int MaxChatLength = 2048;
-        private const int MaxSlotEventsPerUpdate = 12;
+        internal const int MaxSlotEventsPerUpdate = 12;
         private const int PlayerInventorySection = 36;
 
         private static bool helloSent;
@@ -124,16 +135,74 @@ namespace MinecraftClient.ChatBots
         private string[] lastPlayers = [];
         private (double X, double Y, double Z, string Dim)? lastPosition;
 
+        // Version 3: movement, for a host that asked for it.
+        private AgentMovement? movement;
+        private long handledStop;
+        private string? lastFacing;
+
         /// <summary>The one window operations may act on: the last one the server opened.</summary>
-        private sealed class OpenWindow(int id, ContainerType type, long openSeq, long openArrival, int total)
+        internal sealed class OpenWindow(int id, ContainerType type, long openSeq, long openArrival, int total)
         {
             public int Id { get; } = id;
             public ContainerType Type { get; } = type;
             public long OpenSeq { get; set; } = openSeq;
             public long OpenArrival { get; } = openArrival;
             public int Total { get; } = total;
-            public bool ContentSent { get; set; }
-            public Dictionary<int, string> Fingerprints { get; set; } = new();
+
+            /// <summary>The window's content was reported (<c>win_items</c> of a report, not of a snapshot).</summary>
+            public bool ContentSent { get; private set; }
+
+            /// <summary>What the host was last told, slot by slot: the base the next changes are found against.</summary>
+            private Dictionary<int, string> told = new();
+
+            /// <summary>
+            /// The slots a report tells the host about now, or null for the whole content: the first report, and a burst
+            /// of more than <paramref name="maxSlots"/> changes (a full resync). Empty when nothing changed since the host
+            /// was last told. The slots returned count as told.
+            /// </summary>
+            public List<int>? Changes(Container container, int maxSlots)
+            {
+                if (!ContentSent)
+                {
+                    ContentSent = true;
+                    return null;
+                }
+
+                Dictionary<int, string> current = Fingerprints(Content(container));
+                List<int> changed = current.Keys.Union(told.Keys)
+                    .Where(slot => !current.TryGetValue(slot, out string? now)
+                                   || !told.TryGetValue(slot, out string? before)
+                                   || now != before)
+                    .Order()
+                    .ToList();
+                if (changed.Count > maxSlots)
+                    return null;
+
+                told = current;
+                return changed;
+            }
+
+            /// <summary>
+            /// The whole content as <c>win_items</c> carries it (the first report, a resync, a <c>snapshot</c>): the
+            /// slots in order, empty ones left out. It counts as told, a snapshot's too: one taken between the bot's
+            /// click and the server's answer shows the client's guess, and the server's correction must then be a
+            /// change against it (before 4.2.1 a refused click's resync went unreported and the slot looked empty).
+            /// </summary>
+            public List<KeyValuePair<int, Item>> Whole(Container container)
+            {
+                List<KeyValuePair<int, Item>> content = Content(container);
+                told = Fingerprints(content);
+                return content;
+            }
+
+            /// <summary>The window's slots the host is told about (its own and the player section), empty ones left out.</summary>
+            private List<KeyValuePair<int, Item>> Content(Container container) => container.Items
+                .Where(entry => entry.Key >= 0 && entry.Key < Total && !entry.Value.IsEmpty)
+                .OrderBy(entry => entry.Key)
+                .ToList();
+
+            private static Dictionary<int, string> Fingerprints(List<KeyValuePair<int, Item>> content) =>
+                content.ToDictionary(entry => entry.Key, entry => AgentBridgeItems.Fingerprint(entry.Value));
         }
 
         public override void Initialize()
@@ -148,13 +217,16 @@ namespace MinecraftClient.ChatBots
             active = true;
             // Click actions are only collected for the chat events that carry them.
             ChatClicks.Collecting = Reports(EventGroups.Chat);
+            if (AgentMovement.Enabled)
+                movement = new AgentMovement(new MoveHost(Handler), EmitMove);
 
             if (!helloSent)
             {
                 helloSent = true;
+                int version = movement is null ? ProtocolVersion : MovementProtocolVersion;
                 channel.Emit("hello", writer =>
                 {
-                    writer.WriteNumber("v", ProtocolVersion);
+                    writer.WriteNumber("v", version);
                     writer.WriteNumber("pid", Environment.ProcessId);
                 });
             }
@@ -187,6 +259,9 @@ namespace MinecraftClient.ChatBots
                 writer.WriteString("user", GetUsername());
                 writer.WriteNumber("protocol", GetProtocolVersion());
             });
+            lastFacing = null;
+            handledStop = channel.LatestStopArrival;
+            movement?.Joined();
         }
 
         public override bool OnDisconnect(DisconnectReason reason, string message)
@@ -197,9 +272,17 @@ namespace MinecraftClient.ChatBots
             joined = false;
             window = null;
             inventoryReported = false;
+            movement?.Left();
             DiscardQueuedOperations();
             channel.Emit("left", writer => writer.WriteString("reason", reason.ToString()));
             return false; // reporting only: AutoRelog and the host keep owning reconnects
+        }
+
+        public override void OnRespawn()
+        {
+            // A respawn or another world: what moved stops ("reset"), sneaking ends.
+            if (active && joined)
+                movement?.Moved();
         }
 
         /// <summary>The host asked for this group of events (<see cref="EventsEnvVar"/>).</summary>
@@ -350,10 +433,20 @@ namespace MinecraftClient.ChatBots
             if (settled)
                 FlushWindow(); // before the operations: they see the content the host was told about
 
+            // A stop takes effect at once, ahead of the operations waiting before it (version 3).
+            if (movement is not null && channel.LatestStopArrival > handledStop)
+            {
+                handledStop = channel.LatestStopArrival;
+                movement.Stop();
+            }
+
             if (joined)
                 ExecuteOperations();
             else
                 DiscardQueuedOperations();
+
+            if (joined)
+                movement?.Tick();
 
             if (inventoryCooldown > 0)
                 inventoryCooldown--;
@@ -420,10 +513,22 @@ namespace MinecraftClient.ChatBots
         /// <summary>Carry out one operation; null on success, else the reason it was refused.</summary>
         private string? Execute(AgentOperation operation)
         {
+            // A stop is never refused: it stopped movement when it arrived (Update), or there is nothing to stop.
+            if (operation.Op == AgentOperation.Stop)
+            {
+                movement?.Stop();
+                return null;
+            }
+
             if (operation.Arrival <= staleBefore)
                 return "stale";
+            if (operation.Moves && operation.Arrival < channel.LatestStopArrival)
+                return "stale"; // a stop came after it
             if (!budget.TryTake())
                 return "rate_limited";
+
+            if (operation.Moves)
+                return movement is null ? "unknown_op" : movement.Start(operation);
 
             switch (operation.Op)
             {
@@ -607,7 +712,24 @@ namespace MinecraftClient.ChatBots
         private void DiscardQueuedOperations()
         {
             staleBefore = channel.LastArrival;
-            channel.DiscardOperations(operation => channel.Refuse(operation.Id, operation.Op, "stale"));
+            channel.DiscardOperations(operation =>
+            {
+                // A stop is never refused (version 3): out of the game nothing moves anyway.
+                if (operation.Op == AgentOperation.Stop)
+                    Acknowledge(operation);
+                else
+                    channel.Refuse(operation.Id, operation.Op, "stale");
+            });
+        }
+
+        private void Acknowledge(AgentOperation operation)
+        {
+            channel.Emit("ack", writer =>
+            {
+                if (operation.Id is not null)
+                    writer.WriteString("id", operation.Id);
+                writer.WriteString("op", operation.Op);
+            });
         }
 
         private void SyncWindow(OpenWindow open, Container container)
@@ -615,32 +737,8 @@ namespace MinecraftClient.ChatBots
             if (!Reports(EventGroups.Windows))
                 return;
 
-            Dictionary<int, string> current = new();
-            foreach ((int slot, Item item) in container.Items)
-            {
-                if (slot >= 0 && slot < open.Total && !item.IsEmpty)
-                    current[slot] = AgentBridgeItems.Fingerprint(item);
-            }
-
-            if (!open.ContentSent)
-            {
-                open.ContentSent = true;
-                open.Fingerprints = current;
-                EmitWindowItems(open, container);
-                return;
-            }
-
-            List<int> changed = current.Keys.Union(open.Fingerprints.Keys)
-                .Where(slot => !current.TryGetValue(slot, out string? now)
-                               || !open.Fingerprints.TryGetValue(slot, out string? before)
-                               || now != before)
-                .Order()
-                .ToList();
-            open.Fingerprints = current;
-            if (changed.Count == 0)
-                return;
-
-            if (changed.Count > MaxSlotEventsPerUpdate)
+            List<int>? changed = open.Changes(container, MaxSlotEventsPerUpdate);
+            if (changed is null)
             {
                 EmitWindowItems(open, container);
                 return;
@@ -666,12 +764,10 @@ namespace MinecraftClient.ChatBots
             }
         }
 
+        /// <summary>The whole content (a report or a snapshot); the <c>win_slot</c> changes that follow are against it.</summary>
         private void EmitWindowItems(OpenWindow open, Container container)
         {
-            List<KeyValuePair<int, Item>> items = container.Items
-                .Where(entry => entry.Key >= 0 && entry.Key < open.Total && !entry.Value.IsEmpty)
-                .OrderBy(entry => entry.Key)
-                .ToList();
+            List<KeyValuePair<int, Item>> items = open.Whole(container);
             int stateId = container.StateID;
 
             channel.Emit("win_items", writer =>
@@ -758,20 +854,128 @@ namespace MinecraftClient.ChatBots
         {
             Location location = GetCurrentLocation();
             string dimension = World.GetDimension()?.Name ?? string.Empty;
-            if (lastPosition is { } last && last.Dim == dimension
-                                         && Math.Abs(last.X - location.X) < 1
-                                         && Math.Abs(last.Y - location.Y) < 1
-                                         && Math.Abs(last.Z - location.Z) < 1)
+            // Version 3: where the direction buttons point is part of the position, a turn is a change, and so is every
+            // new block (a one-block step may move the feet less than a block: the walk stops near the block's middle).
+            string? facing = movement?.Facing;
+            if (lastPosition is { } last && last.Dim == dimension && facing == lastFacing
+                && (movement is null
+                    ? Math.Abs(last.X - location.X) < 1 && Math.Abs(last.Y - location.Y) < 1
+                                                         && Math.Abs(last.Z - location.Z) < 1
+                    : SameBlock(last.X, location.X) && SameBlock(last.Y, location.Y) && SameBlock(last.Z, location.Z)))
                 return;
 
             lastPosition = (location.X, location.Y, location.Z, dimension);
+            lastFacing = facing;
             channel.Emit("pos", writer =>
             {
                 writer.WriteNumber("x", Math.Round(location.X, 2));
                 writer.WriteNumber("y", Math.Round(location.Y, 2));
                 writer.WriteNumber("z", Math.Round(location.Z, 2));
                 writer.WriteString("dim", dimension);
+                if (facing is not null)
+                    writer.WriteString("facing", facing);
             });
+        }
+
+        /// <summary>Both coordinates are in the same block (version 3's <c>pos</c>: every new block is reported).</summary>
+        internal static bool SameBlock(double before, double now) => Math.Floor(before) == Math.Floor(now);
+
+        /// <summary>Version 3's <c>move</c> event: what the account does, and whether it sneaks.</summary>
+        private void EmitMove(MoveState state)
+        {
+            if (!Reports(EventGroups.Movement))
+                return;
+
+            channel.Emit("move", writer =>
+            {
+                writer.WriteString("doing", state.Doing);
+                if (state.Id is not null)
+                    writer.WriteString("id", state.Id);
+                if (state.To is { } to)
+                {
+                    writer.WriteStartObject("to");
+                    writer.WriteNumber("x", to.X);
+                    writer.WriteNumber("y", to.Y);
+                    writer.WriteNumber("z", to.Z);
+                    writer.WriteEndObject();
+                }
+
+                if (state.Name is not null)
+                    writer.WriteString("name", state.Name);
+                if (state.UntilMs is { } until)
+                    writer.WriteNumber("until", until);
+                if (state.Ended is not null)
+                    writer.WriteString("ended", state.Ended);
+                writer.WriteBoolean("sneak", state.Sneak);
+            });
+        }
+
+        /// <summary>The client as the movement controller sees it (<see cref="IMoveHost"/>).</summary>
+        private sealed class MoveHost(McClient client) : IMoveHost
+        {
+            public bool CanMove => client.GetTerrainEnabled() && client.GetEntityHandlingEnabled();
+            public bool PositionKnown => client.LocationKnown;
+            public Location Position => client.GetCurrentLocation();
+            public float Yaw => client.GetYaw();
+            public bool Walking => client.WalkingPath;
+            public string SelfName => client.GetUsername();
+            public void Walk(IReadOnlyList<Location> waypoints) => client.WalkWaypoints(waypoints);
+            public void Halt() => client.HaltPath();
+            public void Look(float yaw) => client.LookTowards(yaw);
+            public void Jump() => client.BridgeJump();
+            public void Sneak(bool on) => client.SetBridgeSneak(on);
+
+            public bool TryFindPlayer(string name, out Location location)
+            {
+                location = default;
+                Entity[] entities;
+                try
+                {
+                    entities = client.GetEntities().Values.ToArray();
+                }
+                catch (InvalidOperationException)
+                {
+                    return false; // changed while copied: the next tick looks again
+                }
+
+                foreach (Entity entity in entities)
+                {
+                    if (entity.Type == EntityType.Player
+                        && string.Equals(entity.Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        location = entity.Location;
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            public IEnumerable<MovePlanner.Cell> Neighbors(MovePlanner.Cell cell)
+            {
+                World world = client.GetWorld();
+                foreach (Location next in Movement.GetAvailableMoves(world, cell.Center, allowUnsafe: false))
+                {
+                    MovePlanner.Cell moved = MovePlanner.Cell.Of(next);
+                    if (Loaded(world, moved))
+                        yield return moved;
+                }
+            }
+
+            public bool Stands(MovePlanner.Cell cell)
+            {
+                World world = client.GetWorld();
+                Location center = cell.Center;
+                return Loaded(world, cell)
+                       && (Movement.IsOnGround(world, center) || world.GetBlock(center).Type.IsLiquid());
+            }
+
+            /// <summary>Only the terrain the server sent: an unknown chunk is never walked into.</summary>
+            private static bool Loaded(World world, MovePlanner.Cell cell)
+            {
+                ChunkColumn? column = world.GetChunkColumn(cell.Center);
+                return column is not null && column.FullyLoaded != false;
+            }
         }
 
         /// <summary>The window type as the game's menu registry names it ("generic_9x6", "anvil", ...).</summary>

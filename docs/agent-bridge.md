@@ -14,7 +14,8 @@ Tests: `MinecraftClient.Tests/AgentBridgeTests.cs`, `AgentBridgeV2Tests.cs`, `Co
 `AutoRespondVarsTests.cs`.
 
 Contract version: **2** (the `v` of `hello`): version 1 as described below, and the additions in
-[Version 2](#version-2-client-411).
+[Version 2](#version-2-client-411). A host that asks for movement (`MCC_AGENT_MOVE=1`) gets **3**: version 2 and
+[Version 3](#version-3-client-420-movement).
 
 ## Activation
 
@@ -349,6 +350,9 @@ longer waits for the window's content (below).
   reported when the server's answer had 150 ms to arrive, also when the server sends none: a vanilla server confirms
   a correctly predicted click with silence, and then the client's view is the result. A plugin that refuses a click
   resyncs the slot, and that change follows as usual.
+- A `snapshot` answers at once with the client's view, which right after a click is the client's guess; the `win_slot`
+  changes that follow are against what the snapshot said (from 4.2.1; before, a snapshot taken between a click and the
+  server's answer hid a refused click's resync, and the slot looked empty until the window opened again).
 - Without `MCC_AGENT_EVENTS` the timing is version 1's: an event for every packet, nothing after a move the server
   does not answer.
 - `close` is accepted before the window's content was reported, for every host. On Canvas (Folia) with
@@ -462,6 +466,132 @@ Boss bars, from the boss bar packet:
 
 Release builds are not ReadyToRun yet: that waits for the memory measurement.
 
+## Version 3 (client 4.2.0): movement
+
+For the cloud's movement (projects-studio `services/cloud-afk/README.md`, "Movement"; `services/afk-host/README.md`,
+"Movement"): the player walks the account by hand from the site, the launcher or the phone. Everything here starts only
+with `MCC_AGENT_MOVE=1`; without it the operations below are `unknown_op` and no event changes, exactly as in version 2.
+
+| Variable | Meaning |
+| --- | --- |
+| `MCC_AGENT_MOVE` | `1`: `hello.v` is 3, the movement operations are known, and `pos` and `move` are written whatever `MCC_AGENT_EVENTS` names (an unset `MCC_AGENT_EVENTS` keeps version 1's groups and timing, so an AFK+ bot's trade proof is unchanged) |
+| `MCC_AGENT_FOLLOW` | the names `approach` and `follow` may name, comma-separated (player names; others are ignored). Empty or unset: none |
+
+The client moves only with terrain and entity handling (`TerrainAndMovements`, `EntityHandling`); without them every
+movement operation but `stop` is refused with `movement_disabled`.
+
+### Operations
+
+```json
+{"op":"step","id":"m1","dir":"forward","n":1}
+{"op":"jump","id":"m2"}
+{"op":"sneak","id":"m3","on":true}
+{"op":"goto","id":"m4","x":120,"y":64,"z":-40}
+{"op":"approach","id":"m5","name":"Kaan_07"}
+{"op":"follow","id":"m6","name":"Kaan_07"}
+{"op":"stop","id":"m7"}
+```
+
+| Op | Fields | Does |
+| --- | --- | --- |
+| `step` | `dir`, `n` (1–8) | walks `n` blocks in a straight line toward `dir`: `forward`, `back`, `left`, `right` of where the account looks (snapped to a compass direction), or `north`, `south`, `east`, `west`. It climbs a block, steps down, and stops before a wall, a drop of more than 3 blocks or a harmful block. Afterwards the account looks where it looked before its steps, so `forward` keeps its meaning. A step toward the direction it is already stepping extends the walk, to at most 8 blocks ahead of where it stands |
+| `jump` | | one jump, when it stands on something |
+| `sneak` | `on` | sneaks until `sneak` off: the server sees the sneak key (Player Input from 1.21.6, Player Command before), and the physics move slowly and never off an edge. While it sneaks, nothing else (AntiAFK, a slab overhead) toggles it |
+| `goto` | `x`, `y`, `z` (block; `x`, `z` within ±30,000,000, `y` within ±2048) | walks to that block, at most 256 blocks away (from the feet to the block's centre), within 2 minutes |
+| `approach` | `name` | walks to 2 blocks from that player and stops, within 2 minutes |
+| `follow` | `name` | keeps 2–3 blocks behind that player, at most 30 minutes, while it stays in sight |
+| `stop` | | stops steps, a walk or following (sneaking stays) |
+
+- **One activity at a time.** `step`, `goto`, `approach` and `follow` replace what runs (no `move` event in between);
+  `jump` and `sneak` go with it. There are no lists of waypoints, no repetition, no patrol.
+- **`stop` always works**: it is never `busy` (it gets in while twice the queue waits), never `stale`, never rate
+  limited; it stops movement at the next tick, ahead of the operations waiting before it, which it makes `stale`. Before
+  joining, or without movement, it is acknowledged and does nothing.
+- **The route.** `goto`, `approach` and `follow` search a path through the terrain the server sent (never into a chunk
+  it did not send): a weighted A* over block cells with MCC's moves (`Movement.GetAvailableMoves`, no unsafe cells),
+  of at most 4,000 cells (1,500 while following), on another thread, cancelled after a second, one at a time. When the
+  goal is out of reach of one search (unknown terrain, the limit), the account walks to the cell nearest to it and
+  searches again; three searches that bring it no nearer end the walk (`blocked`). Following searches again at most once
+  a second, when the player moved more than 2 blocks or the walk ended. A walk that does not move for 2 seconds counts
+  as stuck. A step searches along its own line only (128 cells), on the game thread.
+- **Names.** `approach` and `follow` take only a name in `MCC_AGENT_FOLLOW` and never the account's own (`not_allowed`),
+  and only a player the client tracks within 64 blocks (`not_visible`): the host decides whose name it may pass, the
+  client refuses anything else.
+- **Rate.** Movement operations other than `stop` take from a bucket of 8 that gets 4 back a second (`rate_limited`),
+  besides version 1's 10 a second for every operation.
+- `ack` means the activity started; how it goes shows in `move` events.
+
+### Events
+
+With `MCC_AGENT_MOVE=1`, `pos` (still checked once a second) carries `facing` and is written whenever the block the
+feet are in, the dimension or `facing` changed (a one-block step may move the feet less than a block); `move` says what
+the account does, on every change:
+
+```json
+{"e":"pos","seq":90,"at":1792844190000,"x":120.5,"y":64.0,"z":-39.5,"dim":"minecraft:overworld","facing":"north"}
+{"e":"move","seq":91,"at":1792844190020,"doing":"goto","id":"m4","to":{"x":120,"y":64,"z":-40},"until":1792844310020,"sneak":false}
+{"e":"move","seq":97,"at":1792844199000,"doing":"idle","ended":"arrived","sneak":false}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `pos.facing` | `north`, `south`, `east`, `west`: what `forward` means now (while it takes steps, where it looked before them) |
+| `doing` | `idle`, `step`, `goto`, `approach`, `follow`; right after `joined`, `idle`, or `off` when the client runs without terrain or entity handling (not started with them, or the joined version has none) |
+| `id` | the operation that started it |
+| `to` | `goto`: the target block |
+| `name` | `approach`, `follow`: the player |
+| `until` | `goto`, `approach`, `follow`: when the client stops it by itself (Unix milliseconds) |
+| `ended` | with `idle`: `arrived`, `blocked` (a wall, a drop, stuck, no way further), `no_path` (no way there found), `timeout` (a walk not there in 2 minutes), `limit` (following stopped after 30 minutes), `out_of_sight` (the player left sight), `reset` (the server moved the account: a respawn, another world, a jump of more than 8 blocks in a tick); none after a `stop` |
+| `sneak` | it sneaks |
+
+A new session starts idle and not sneaking; a disconnection ends what ran without a `move` event (`left` says it).
+
+### New `err` reasons
+
+| Reason | Meaning |
+| --- | --- |
+| `movement_disabled` | no terrain or entity handling |
+| `not_ready` | the server has not told the client where it stands yet |
+| `bad_dir`, `bad_count`, `bad_name` | a `step` direction, a step count outside 1–8, a name that is no player name |
+| `blocked` | a `step` with not one block to go |
+| `too_far` | a `goto` more than 256 blocks away |
+| `not_allowed` | a name not in `MCC_AGENT_FOLLOW`, or the account's own |
+| `not_visible` | that player is not in sight (64 blocks) |
+
+## Client 4.2.3: heads and styled text
+
+For the cloud's inventory view (projects-studio `services/cloud-afk/README.md`, "Inventory"): a player head's own skin
+and names and lore in the colours the game's tooltip draws them in. Items gain four optional fields; the plain `name`,
+`itemName` and `lore` stay exactly as before (trade checks read them), and a host that does not know the fields ignores
+them.
+
+```json
+{"slot":3,"id":"minecraft:player_head","count":1,"skin":"8a6d…0998",
+ "name":"Kılıç","nameStyle":[[5,"6lo"]],
+ "lore":["Hasar +12","","Yeşil kalın sade"],"loreStyle":[[[6,"7"],[3,"c"]],null,[[6,"a"],[6,"al"],[4,"o"]]]}
+```
+
+| Field | Meaning | Trust |
+| --- | --- | --- |
+| `skin` | a head's skin: the hash of its texture on Mojang's texture server, from the profile's `textures` property (base64 JSON, `textures.SKIN.url`; before 1.20.5 `SkullOwner.Properties.textures`), only for `http(s)://textures.minecraft.net/texture/` and 16–64 hex digits, lower case. Any other address, a cape only or a value that does not read: none. A profile with only a name or an id (the game would look the skin up) has none | server data (an address, not text) |
+| `nameStyle`, `itemNameStyle` | the look of `name` and `itemName` | server or plugin text |
+| `loreStyle` | one entry a `lore` line: its look, or `null`. Left out when no line has one | anyone's text |
+
+A look is spans over the plain text: `[[length, code], ...]`, the lengths in UTF-16 code units adding up to the text's
+length. A code is a colour, one of `0`–`f` (the game's 16, as its formatting codes) or `#rrggbb`, or none (the field's
+own: the rarity colour for names, dark purple for lore), followed by the flags that are on, in the order `k` obfuscated,
+`l` bold, `m` strikethrough, `n` underlined, `o` italic. The spans carry no text.
+
+- The client walks the text component itself (ChatParser's `§` string loses an `italic: false` at the root and whether
+  a colour came from the component or from a code in its text): `extra` inherits, a list is its first part with the
+  others after it, `translate` takes the component's look (its arguments' own looks are not kept). Codes inside a text
+  follow the game: a colour code sets the colour and turns every flag off, a flag code adds its flag, `§r` goes back to
+  the text's own look.
+- Lore starts italic and a custom name starts italic, as in the game; `itemName` starts with no flags.
+- When the walk does not come to exactly the plain text (a line break or a surrogate pair split between two parts,
+  nesting deeper than 64, ...), the field has no look. A text cut at 256 characters keeps the spans of what is left. A field whose one span is the field's own look (no colour, no flags) has none
+  either; adjacent spans with the same code are one; a look of more than 64 spans is left out.
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and
@@ -476,11 +606,41 @@ Release builds are not ReadyToRun yet: that waits for the memory measurement.
 - The last gate (`agentgate.rs`) decides what may be sent; the bridge repeats the shape checks above as a second
   line, not instead of it.
 
+## Lean mode (client 4.2.2, `MCC_LEAN`)
+
+For many small and mostly idle clients on one machine. `MCC_LEAN=1` turns every part on, a comma separated list
+(`palettes,socket`) only the parts it names; unset, nothing changes. No part changes what the client does in game or
+shows; each skips work whose result nothing in a cloud profile reads:
+
+| Part | What the client skips |
+| --- | --- |
+| `palettes` | The block, entity and item palettes of a feature that is off (terrain and movements, entity handling, inventory handling) are built on first use instead of at every connect, and without terrain the client no longer looks for a top slab above its head every 300 ms (with no terrain every block reads as air; the look only built the block palette). A client with the feature on builds its palette at connect, as before |
+| `socket` | The packet reader no longer wakes every 10 ms to look for data: it waits on the socket (at most 100 ms, for cancellation) |
+| `book` | Advancements, their tab and the recipe book (`Advancements`, `SelectAdvancementTab`, `UnlockRecipes`, `RecipeBookAdd`, `RecipeBookRemove`, the legacy statistics) are neither parsed nor kept: the `/achievement` and `/recipebook` commands and a script's `GetAchievements()` see none |
+
+`MCC_LEAN_TRACE=1` (measurements only, never set by the host) writes one technical stderr line, with the first stack
+frames, when a palette left for later is built after all.
+
+Measured (28 Oct 2026, 26.3 on a local Canvas server, Linux container, the cloud profile; afk-host's runtime settings
+`MALLOC_ARENA_MAX=2`, `DOTNET_TieredCompilation=0` with the ReadyToRun package): 32.5 MiB of anonymous, shared JIT and
+kernel memory per client against 43-44 MiB for 4.2.1 with the earlier settings, linear from 1 to 30 clients; 0.67 % of
+a core per idle client against 0.84 %, 60 context switches a second against 140; 0.75 CPU seconds to join against 2.0.
+
 ## Compatibility
 
 - Without the two descriptor variables nothing of the agent bridge runs, and the only visible change for other
   users is the stdout hardening above (only with `MCC_LAUNCHER_BRIDGE`). Version 2's console kinds and strict values
-  run only with their own variables (`MCC_CONSOLE_KINDS`, `MCC_MATCH_VARS`).
+  run only with their own variables (`MCC_CONSOLE_KINDS`, `MCC_MATCH_VARS`), version 3's movement only with
+  `MCC_AGENT_MOVE=1`.
+- Since 4.1.2, for every user: from 1.21.6 an entity action goes to the server in that version's form (sneaking is
+  the Player Input packet's sneak key, the other Player Command ids moved down by two). Before, AntiAFK's "sneak" sent
+  "leave bed" and "start sprinting" to 1.21.6 and later servers.
+- Since 4.2.1, for every user: NBT strings (text components from 1.20.3: chat, titles, team prefixes, item names and
+  lore; tag names; item NBT before 1.20.5) are read and written as Java's modified UTF-8. Before, every character
+  outside the Basic Multilingual Plane (an emoji in a chat prefix) arrived as six U+FFFD, and the client wrote NBT
+  strings back as plain UTF-8.
+- Since 4.2.2: lean mode, only with `MCC_LEAN` (above). The Linux packages are published ReadyToRun (code compiled
+  ahead of time: less to compile at start, and code pages that all clients on a machine share).
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

@@ -43,6 +43,27 @@ namespace MinecraftClient.Protocol.Handlers
         }
 
         /// <summary>
+        /// Wait until the socket has data to read or is closed, at most <paramref name="milliseconds"/> (lean mode's
+        /// packet reader: no wake-ups while nothing comes). Returns at once when data is already there; a socket that
+        /// is gone returns at once too (the reader's next read reports it).
+        /// </summary>
+        /// <param name="milliseconds">The longest wait</param>
+        public void WaitForData(int milliseconds)
+        {
+            try
+            {
+                if (c.Client is { } socket && socket.Available == 0)
+                    socket.Poll(TimeSpan.FromMilliseconds(milliseconds), SelectMode.SelectRead);
+            }
+            catch (SocketException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        /// <summary>
         /// Switch network reading/writing to an encrypted stream
         /// </summary>
         /// <param name="secretKey">AES secret key</param>

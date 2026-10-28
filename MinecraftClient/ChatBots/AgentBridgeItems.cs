@@ -44,11 +44,61 @@ namespace MinecraftClient.ChatBots
         /// <summary>Plain text: no formatting codes, line breaks as "⏎", cut to <paramref name="maxLength"/>.</summary>
         public static string Plain(string? text, int maxLength = MaxTextLength)
         {
-            string plain = WellFormed(ConsoleIO.KeepOnOneLine(ChatBot.GetVerbatim(text)));
+            return Cut(WellFormed(ConsoleIO.KeepOnOneLine(ChatBot.GetVerbatim(text))), maxLength);
+        }
+
+        /// <summary><paramref name="plain"/> cut to <paramref name="maxLength"/> UTF-16 code units.</summary>
+        internal static string Cut(string plain, int maxLength)
+        {
             if (plain.Length <= maxLength)
                 return plain;
             // Never end on the first half of a surrogate pair.
             return char.IsHighSurrogate(plain[maxLength - 1]) ? plain[..(maxLength - 1)] : plain[..maxLength];
+        }
+
+        /// <summary>A name's or lore line's spans (<see cref="AgentBridgeText"/>), when it has any.</summary>
+        private static void WriteStyle(Utf8JsonWriter writer, string property, object? component,
+            AgentBridgeText.Look look, string plain)
+        {
+            if (AgentBridgeText.Spans(component, look, plain) is { } spans)
+            {
+                writer.WritePropertyName(property);
+                AgentBridgeText.WriteSpans(writer, spans);
+            }
+        }
+
+        /// <summary>
+        /// The lore lines and, when one of them has spans, <c>loreStyle</c>: one entry a line, null for a line without.
+        /// </summary>
+        private static void WriteLore(Utf8JsonWriter writer, IReadOnlyList<string> lines, IReadOnlyList<object?> components)
+        {
+            writer.WriteStartArray("lore");
+            List<string> plain = [];
+            foreach (string line in lines.Take(MaxLoreLines))
+            {
+                plain.Add(Plain(line));
+                writer.WriteStringValue(plain[^1]);
+            }
+
+            writer.WriteEndArray();
+
+            List<List<(int Length, string Code)>?> styles = plain
+                .Select((line, i) => i < components.Count
+                    ? AgentBridgeText.Spans(components[i], AgentBridgeText.Look.Lore, line)
+                    : null)
+                .ToList();
+            if (styles.All(spans => spans is null))
+                return;
+            writer.WriteStartArray("loreStyle");
+            foreach (List<(int Length, string Code)>? spans in styles)
+            {
+                if (spans is null)
+                    writer.WriteNullValue();
+                else
+                    AgentBridgeText.WriteSpans(writer, spans);
+            }
+
+            writer.WriteEndArray();
         }
 
         /// <summary>
@@ -127,17 +177,27 @@ namespace MinecraftClient.ChatBots
             StructuredComponent? Find(string name) => components.FirstOrDefault(c => c.ComponentName == name);
 
             if (Find("minecraft:custom_name") is CustomNameComponent customName)
-                writer.WriteString("name", Plain(customName.CustomName));
+            {
+                string name = Plain(customName.CustomName);
+                writer.WriteString("name", name);
+                WriteStyle(writer, "nameStyle", customName.CustomNameNbt, AgentBridgeText.Look.CustomName, name);
+            }
+
             if (Find("minecraft:item_name") is ItemNameComponent itemName)
-                writer.WriteString("itemName", Plain(itemName.ItemName));
+            {
+                string name = Plain(itemName.ItemName);
+                writer.WriteString("itemName", name);
+                WriteStyle(writer, "itemNameStyle", itemName.ItemNameNbt, AgentBridgeText.Look.None, name);
+            }
 
             if (Find("minecraft:lore") is LoreNameComponent1206 lore && lore.Lines.Count > 0)
-            {
-                writer.WriteStartArray("lore");
-                foreach (string line in lore.Lines.Take(MaxLoreLines))
-                    writer.WriteStringValue(Plain(line));
-                writer.WriteEndArray();
-            }
+                WriteLore(writer, lore.Lines, lore.LinesNbt);
+
+            // A player head's skin: its texture's hash on Mojang's texture server (client 4.2.3).
+            if (Find("minecraft:profile") is ProfileComponent head
+                && head.ProfileProperties.Where(p => p.Name == "textures").Select(p => AgentBridgeText.SkinHash(p.Value))
+                    .FirstOrDefault(hash => hash is not null) is { } skin)
+                writer.WriteString("skin", skin);
 
             unparsed |= WriteEnchantments(writer, "ench", Find("minecraft:enchantments"));
             unparsed |= WriteEnchantments(writer, "stored", Find("minecraft:stored_enchantments"));
@@ -287,17 +347,32 @@ namespace MinecraftClient.ChatBots
 
         private static bool WriteLegacyNbt(Utf8JsonWriter writer, Item item, Dictionary<string, object> nbt)
         {
+            Dictionary<string, object>? displayNbt = nbt.TryGetValue("display", out object? displayValue)
+                ? displayValue as Dictionary<string, object>
+                : null;
             string? displayName = item.DisplayName;
             if (!string.IsNullOrEmpty(displayName))
-                writer.WriteString("name", Plain(displayName));
+            {
+                string name = Plain(displayName);
+                writer.WriteString("name", name);
+                WriteStyle(writer, "nameStyle", displayNbt?.GetValueOrDefault("Name") as string,
+                    AgentBridgeText.Look.CustomName, name);
+            }
 
             if (item.Lores is { Length: > 0 } lores)
             {
-                writer.WriteStartArray("lore");
-                foreach (string line in lores.Take(MaxLoreLines))
-                    writer.WriteStringValue(Plain(line));
-                writer.WriteEndArray();
+                object[] rawLines = displayNbt?.GetValueOrDefault("Lore") as object[] ?? [];
+                WriteLore(writer, lores, rawLines.Select(line => line as string).ToList<object?>());
             }
+
+            // A player head's skin, from SkullOwner (client 4.2.3).
+            if (nbt.TryGetValue("SkullOwner", out object? owner)
+                && owner is Dictionary<string, object> ownerTag
+                && ownerTag.GetValueOrDefault("Properties") is Dictionary<string, object> properties
+                && properties.GetValueOrDefault("textures") is object[] { Length: > 0 } textures
+                && textures[0] is Dictionary<string, object> texture
+                && AgentBridgeText.SkinHash(texture.GetValueOrDefault("Value") as string) is { } skin)
+                writer.WriteString("skin", skin);
 
             if (item.Damage != 0)
                 writer.WriteNumber("damage", item.Damage);

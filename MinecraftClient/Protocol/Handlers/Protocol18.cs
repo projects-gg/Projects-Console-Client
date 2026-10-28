@@ -117,9 +117,12 @@ namespace MinecraftClient.Protocol.Handlers
         readonly Protocol18Forge pForge;
         readonly Protocol18Terrain pTerrain;
         readonly IMinecraftComHandler handler;
-        readonly EntityPalette entityPalette;
+        // Lean mode: built on first use when their feature is off (LeanMode.LazyPalettes).
+        readonly Lazy<EntityPalette> entityPaletteSource;
+        readonly Lazy<ItemPalette> itemPaletteSource;
+        EntityPalette entityPalette => entityPaletteSource.Value;
         readonly EntityMetadataPalette entityMetadataPalette;
-        readonly ItemPalette itemPalette;
+        ItemPalette itemPalette => itemPaletteSource.Value;
         readonly PacketTypePalette packetPalette;
         readonly SocketWrapper socketWrapper;
         readonly DataTypes dataTypes;
@@ -168,10 +171,61 @@ namespace MinecraftClient.Protocol.Handlers
                 handler.SetEntityHandlingEnabled(false);
             }
 
-            Block.Palette = protocolVersion switch
+            // Lean mode: a palette whose feature is off is built on its first use (most cloud clients never use one).
+            bool lazyPalettes = LeanMode.LazyPalettes;
+            bool terrainEnabled = handler.GetTerrainEnabled();
+            if (lazyPalettes && !terrainEnabled)
+                Block.SetPaletteFactory(() => LeanMode.Built("block", NewBlockPalette(protocolVersion, false)));
+            else
+                Block.Palette = NewBlockPalette(protocolVersion, terrainEnabled);
+
+            bool entityHandling = handler.GetEntityHandlingEnabled();
+            entityPaletteSource = LeanMode.Palette(lazyPalettes && !entityHandling, "entity",
+                () => NewEntityPalette(protocolVersion, entityHandling));
+
+            entityMetadataPalette = EntityMetadataPalette.GetPalette(protocolVersion);
+
+            bool inventoryEnabled = handler.GetInventoryEnabled();
+            itemPaletteSource = LeanMode.Palette(lazyPalettes && !inventoryEnabled, "item",
+                () => NewItemPalette(protocolVersion, inventoryEnabled));
+
+            ChatParser.ChatId2Type = this.protocolVersion switch
+            {
+                // MessageType
+                // You can find it in https://wiki.vg/Protocol#Player_Chat_Message or /net/minecraft/network/message/MessageType.java
+                >= MC_1_19_2_Version => new()
+                {
+                    { 0, ChatParser.MessageType.CHAT },
+                    { 1, ChatParser.MessageType.SAY_COMMAND },
+                    { 2, ChatParser.MessageType.MSG_COMMAND_INCOMING },
+                    { 3, ChatParser.MessageType.MSG_COMMAND_OUTGOING },
+                    { 4, ChatParser.MessageType.TEAM_MSG_COMMAND_INCOMING },
+                    { 5, ChatParser.MessageType.TEAM_MSG_COMMAND_OUTGOING },
+                    { 6, ChatParser.MessageType.EMOTE_COMMAND },
+                },
+                MC_1_19_Version => new()
+                {
+                    { 0, ChatParser.MessageType.CHAT },
+                    { 1, ChatParser.MessageType.RAW_MSG },
+                    { 2, ChatParser.MessageType.RAW_MSG },
+                    { 3, ChatParser.MessageType.SAY_COMMAND },
+                    { 4, ChatParser.MessageType.MSG_COMMAND_INCOMING },
+                    { 5, ChatParser.MessageType.TEAM_MSG_COMMAND_INCOMING },
+                    { 6, ChatParser.MessageType.EMOTE_COMMAND },
+                    { 7, ChatParser.MessageType.RAW_MSG },
+                },
+                _ => ChatParser.ChatId2Type
+            };
+            ChatParser.ClearChatTypeDecorations();
+        }
+
+        /// <summary>The block palette of a protocol version (terrain handling on: none past the newest one).</summary>
+        private static BlockPalette NewBlockPalette(int protocolVersion, bool terrainEnabled)
+        {
+            return protocolVersion switch
             {
                 // Block palette
-                > MC_26_3_Version when handler.GetTerrainEnabled() =>
+                > MC_26_3_Version when terrainEnabled =>
                     throw new NotImplementedException(Translations.exception_palette_block),
                 >= MC_26_3_Version => new Palette263(),
                 >= MC_26_2_Version => new Palette262(),
@@ -194,11 +248,15 @@ namespace MinecraftClient.Protocol.Handlers
                 >= MC_1_13_Version => new Palette113(),
                 _ => new Palette112()
             };
+        }
 
-            entityPalette = protocolVersion switch
+        /// <summary>The entity palette of a protocol version (entity handling on: none past the newest one).</summary>
+        private static EntityPalette NewEntityPalette(int protocolVersion, bool entityHandling)
+        {
+            return protocolVersion switch
             {
                 // Entity palette
-                > MC_26_3_Version when handler.GetEntityHandlingEnabled() =>
+                > MC_26_3_Version when entityHandling =>
                     throw new NotImplementedException(Translations.exception_palette_entity),
                 >= MC_26_3_Version => new EntityPalette263(),
                 >= MC_26_2_Version => new EntityPalette262(),
@@ -225,13 +283,15 @@ namespace MinecraftClient.Protocol.Handlers
                 >= MC_1_11_Version => new EntityPalette112(),
                 _ => new EntityPalette18()
             };
+        }
 
-            entityMetadataPalette = EntityMetadataPalette.GetPalette(protocolVersion);
-
-            itemPalette = protocolVersion switch
+        /// <summary>The item palette of a protocol version (inventory handling on: none past the newest one).</summary>
+        private static ItemPalette NewItemPalette(int protocolVersion, bool inventoryEnabled)
+        {
+            return protocolVersion switch
             {
                 // Item palette
-                > MC_26_3_Version when handler.GetInventoryEnabled() =>
+                > MC_26_3_Version when inventoryEnabled =>
                     throw new NotImplementedException(Translations.exception_palette_item),
                 >= MC_26_3_Version => new ItemPalette263(),
                 >= MC_26_2_Version => new ItemPalette262(),
@@ -264,35 +324,6 @@ namespace MinecraftClient.Protocol.Handlers
                 >= MC_1_9_Version => new ItemPalette19(),
                 _ => new ItemPalette18()
             };
-
-            ChatParser.ChatId2Type = this.protocolVersion switch
-            {
-                // MessageType 
-                // You can find it in https://wiki.vg/Protocol#Player_Chat_Message or /net/minecraft/network/message/MessageType.java
-                >= MC_1_19_2_Version => new()
-                {
-                    { 0, ChatParser.MessageType.CHAT },
-                    { 1, ChatParser.MessageType.SAY_COMMAND },
-                    { 2, ChatParser.MessageType.MSG_COMMAND_INCOMING },
-                    { 3, ChatParser.MessageType.MSG_COMMAND_OUTGOING },
-                    { 4, ChatParser.MessageType.TEAM_MSG_COMMAND_INCOMING },
-                    { 5, ChatParser.MessageType.TEAM_MSG_COMMAND_OUTGOING },
-                    { 6, ChatParser.MessageType.EMOTE_COMMAND },
-                },
-                MC_1_19_Version => new()
-                {
-                    { 0, ChatParser.MessageType.CHAT },
-                    { 1, ChatParser.MessageType.RAW_MSG },
-                    { 2, ChatParser.MessageType.RAW_MSG },
-                    { 3, ChatParser.MessageType.SAY_COMMAND },
-                    { 4, ChatParser.MessageType.MSG_COMMAND_INCOMING },
-                    { 5, ChatParser.MessageType.TEAM_MSG_COMMAND_INCOMING },
-                    { 6, ChatParser.MessageType.EMOTE_COMMAND },
-                    { 7, ChatParser.MessageType.RAW_MSG },
-                },
-                _ => ChatParser.ChatId2Type
-            };
-            ChatParser.ClearChatTypeDecorations();
         }
 
         /// <summary>
@@ -420,7 +451,11 @@ namespace MinecraftClient.Protocol.Handlers
                     break;
                 }
 
-                Thread.Sleep(10);
+                // Lean mode: sleep in the kernel until data comes (or the wait ends) instead of waking every 10 ms.
+                if (LeanMode.SocketWait)
+                    socketWrapper.WaitForData(LeanMode.SocketWaitMilliseconds);
+                else
+                    Thread.Sleep(10);
             }
 
             if (cancelToken.IsCancellationRequested)
@@ -3537,13 +3572,14 @@ namespace MinecraftClient.Protocol.Handlers
                     }
                     break;
 
+                // Lean mode: advancements and the recipe book are neither parsed nor kept (LeanMode.SkipBook).
                 case PacketTypesIn.UnlockRecipes:
-                    if (protocolVersion >= MC_1_13_Version)
+                    if (protocolVersion >= MC_1_13_Version && !LeanMode.SkipBook)
                         HandleUnlockRecipes(packetData);
                     break;
 
                 case PacketTypesIn.RecipeBookAdd:
-                    if (protocolVersion >= MC_1_21_2_Version)
+                    if (protocolVersion >= MC_1_21_2_Version && !LeanMode.SkipBook)
                     {
                         try
                         {
@@ -3556,23 +3592,25 @@ namespace MinecraftClient.Protocol.Handlers
                     }
                     break;
                 case PacketTypesIn.RecipeBookRemove:
-                    if (protocolVersion >= MC_1_21_2_Version)
+                    if (protocolVersion >= MC_1_21_2_Version && !LeanMode.SkipBook)
                         handler.OnRecipeBookRemove(ReadRecipeBookDisplayIds(packetData));
                     break;
                 case PacketTypesIn.RecipeBookSettings:
                     break;
 
                 case PacketTypesIn.Statistics:
-                    if (protocolVersion < MC_1_12_Version)
+                    if (protocolVersion < MC_1_12_Version && !LeanMode.SkipBook)
                         HandleLegacyStatistics(packetData);
                     break;
 
                 case PacketTypesIn.Advancements:
-                    HandleAdvancements(packetData);
+                    if (!LeanMode.SkipBook)
+                        HandleAdvancements(packetData);
                     break;
 
                 case PacketTypesIn.SelectAdvancementTab:
-                    HandleSelectAdvancementTab(packetData);
+                    if (!LeanMode.SkipBook)
+                        HandleSelectAdvancementTab(packetData);
                     break;
 
                 default:
@@ -5432,13 +5470,51 @@ namespace MinecraftClient.Protocol.Handlers
             }
         }
 
+        /// <summary>The sneak key of the Player Input packet (1.21.2+: forward 0x01 … jump 0x10, sneak 0x20, sprint 0x40).</summary>
+        internal const byte PlayerInputSneak = 0x20;
+
+        /// <summary>
+        /// How an entity action (<see cref="EntityActionType"/>) reaches a server of this protocol version. From 1.21.6
+        /// the Player Command packet has no shift key: sneaking is the sneak flag of the Player Input packet, and the
+        /// other actions moved down by two (0 leave bed, 1 start sprinting, 2 stop sprinting, ...). Before, every action
+        /// is the command's own id.
+        /// </summary>
+        /// <returns>The Player Command's action id, or null when the action is the Player Input's sneak key; then
+        /// <paramref name="sneak"/> says whether the key is down.</returns>
+        internal static int? PlayerCommandAction(int protocolVersion, int actionId, out bool sneak)
+        {
+            sneak = false;
+            if (protocolVersion < MC_1_21_6_Version)
+                return actionId;
+
+            switch (actionId)
+            {
+                case (int)EntityActionType.StartSneaking:
+                    sneak = true;
+                    return null;
+                case (int)EntityActionType.StopSneaking:
+                    return null;
+                default:
+                    return actionId - 2;
+            }
+        }
+
         public bool SendEntityAction(int PlayerEntityID, int ActionID)
         {
             try
             {
+                int? command = PlayerCommandAction(protocolVersion, ActionID, out bool sneak);
+                if (command is null)
+                {
+                    // Player Input carries every movement key. This client moves by itself and has no other key
+                    // down: the sneak key alone, as the vanilla client sends it when shift is pressed or released.
+                    SendPacket(PacketTypesOut.SteerVehicle, new[] { sneak ? PlayerInputSneak : (byte)0 });
+                    return true;
+                }
+
                 List<byte> fields = new();
                 fields.AddRange(DataTypes.GetVarInt(PlayerEntityID));
-                fields.AddRange(DataTypes.GetVarInt(ActionID));
+                fields.AddRange(DataTypes.GetVarInt(command.Value));
                 fields.AddRange(DataTypes.GetVarInt(0));
                 SendPacket(PacketTypesOut.EntityAction, fields);
                 return true;

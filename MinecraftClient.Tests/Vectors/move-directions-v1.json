@@ -1,0 +1,354 @@
+{
+  "description": "The client fork copy of the directions section of projects-studio services/cloud-afk/test-vectors/move-op-v1.json (Cloud AFK movement, generated there by generate-move-op-v1.mjs; copied unchanged, do not edit by hand): the facing from the yaw (the game rounding), the direction of a step relative to it (or a compass direction the bridge names), and the block offset of n steps.",
+  "source": "projects-studio main 5158bdb services/cloud-afk/test-vectors/move-op-v1.json#directions",
+  "directions": [
+    {
+      "name": "yaw 0 faces south, forward is +Z",
+      "yaw": 0,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw 44.9 still faces south",
+      "yaw": 44.9,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw 45 faces west",
+      "yaw": 45,
+      "dir": "forward",
+      "n": 2,
+      "expected": {
+        "facing": "west",
+        "toward": "west",
+        "dx": -2,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 90 faces west, right is north",
+      "yaw": 90,
+      "dir": "right",
+      "n": 1,
+      "expected": {
+        "facing": "west",
+        "toward": "north",
+        "dx": 0,
+        "dz": -1
+      }
+    },
+    {
+      "name": "yaw 134.9 faces west, left is south",
+      "yaw": 134.9,
+      "dir": "left",
+      "n": 1,
+      "expected": {
+        "facing": "west",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw 135 faces north",
+      "yaw": 135,
+      "dir": "forward",
+      "n": 3,
+      "expected": {
+        "facing": "north",
+        "toward": "north",
+        "dx": 0,
+        "dz": -3
+      }
+    },
+    {
+      "name": "yaw 180 faces north, back is south",
+      "yaw": 180,
+      "dir": "back",
+      "n": 1,
+      "expected": {
+        "facing": "north",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw 180 faces north, left is west",
+      "yaw": 180,
+      "dir": "left",
+      "n": 4,
+      "expected": {
+        "facing": "north",
+        "toward": "west",
+        "dx": -4,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 180 faces north, right is east",
+      "yaw": 180,
+      "dir": "right",
+      "n": 8,
+      "expected": {
+        "facing": "north",
+        "toward": "east",
+        "dx": 8,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 224.9 faces north",
+      "yaw": 224.9,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "north",
+        "toward": "north",
+        "dx": 0,
+        "dz": -1
+      }
+    },
+    {
+      "name": "yaw 225 faces east",
+      "yaw": 225,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "east",
+        "toward": "east",
+        "dx": 1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 270 faces east, back is west",
+      "yaw": 270,
+      "dir": "back",
+      "n": 2,
+      "expected": {
+        "facing": "east",
+        "toward": "west",
+        "dx": -2,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 270 faces east, left is north",
+      "yaw": 270,
+      "dir": "left",
+      "n": 1,
+      "expected": {
+        "facing": "east",
+        "toward": "north",
+        "dx": 0,
+        "dz": -1
+      }
+    },
+    {
+      "name": "yaw 270 faces east, right is south",
+      "yaw": 270,
+      "dir": "right",
+      "n": 1,
+      "expected": {
+        "facing": "east",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw 314.9 faces east",
+      "yaw": 314.9,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "east",
+        "toward": "east",
+        "dx": 1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 315 faces south again",
+      "yaw": 315,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw 0, left is east",
+      "yaw": 0,
+      "dir": "left",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "east",
+        "dx": 1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 0, right is west",
+      "yaw": 0,
+      "dir": "right",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "west",
+        "dx": -1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw -45 faces south",
+      "yaw": -45,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw -45.1 faces east",
+      "yaw": -45.1,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "east",
+        "toward": "east",
+        "dx": 1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw -90 faces east",
+      "yaw": -90,
+      "dir": "back",
+      "n": 1,
+      "expected": {
+        "facing": "east",
+        "toward": "west",
+        "dx": -1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw -180 faces north",
+      "yaw": -180,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "north",
+        "toward": "north",
+        "dx": 0,
+        "dz": -1
+      }
+    },
+    {
+      "name": "yaw -270 faces west",
+      "yaw": -270,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "west",
+        "toward": "west",
+        "dx": -1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "yaw 360 faces south",
+      "yaw": 360,
+      "dir": "forward",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "south",
+        "dx": 0,
+        "dz": 1
+      }
+    },
+    {
+      "name": "yaw 720.4 faces south",
+      "yaw": 720.4,
+      "dir": "back",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "north",
+        "dx": 0,
+        "dz": -1
+      }
+    },
+    {
+      "name": "the bridge's own north, whatever the facing",
+      "yaw": 90,
+      "dir": "north",
+      "n": 2,
+      "expected": {
+        "facing": "west",
+        "toward": "north",
+        "dx": 0,
+        "dz": -2
+      }
+    },
+    {
+      "name": "the bridge's own east",
+      "yaw": 0,
+      "dir": "east",
+      "n": 1,
+      "expected": {
+        "facing": "south",
+        "toward": "east",
+        "dx": 1,
+        "dz": 0
+      }
+    },
+    {
+      "name": "the bridge's own south",
+      "yaw": 180,
+      "dir": "south",
+      "n": 5,
+      "expected": {
+        "facing": "north",
+        "toward": "south",
+        "dx": 0,
+        "dz": 5
+      }
+    },
+    {
+      "name": "the bridge's own west",
+      "yaw": 270,
+      "dir": "west",
+      "n": 1,
+      "expected": {
+        "facing": "east",
+        "toward": "west",
+        "dx": -1,
+        "dz": 0
+      }
+    }
+  ]
+}

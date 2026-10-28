@@ -13,11 +13,57 @@ namespace MinecraftClient.Mapping
     {
         public static readonly Block Air = new(0);
 
+        private static readonly System.Threading.Lock paletteLock = new();
+        private static BlockPalette? palette;
+        private static Func<BlockPalette>? paletteFactory;
+
         /// <summary>
         /// Get or set global block ID to Material mapping
         /// The global Palette is a concept introduced with Minecraft 1.13
         /// </summary>
-        public static BlockPalette Palette { get; set; } = new Palette112();
+        /// <remarks>
+        /// Built on first use: the palette a factory names (<see cref="SetPaletteFactory"/>, lean mode), else the 1.12
+        /// one.
+        /// </remarks>
+        public static BlockPalette Palette
+        {
+            get => System.Threading.Volatile.Read(ref palette) ?? BuildPalette();
+            set
+            {
+                lock (paletteLock)
+                {
+                    paletteFactory = null;
+                    System.Threading.Volatile.Write(ref palette, value);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The palette of this connection, built on its first use (lean mode, terrain handling off: such a client
+        /// never reads it).
+        /// </summary>
+        internal static void SetPaletteFactory(Func<BlockPalette> factory)
+        {
+            ArgumentNullException.ThrowIfNull(factory);
+            lock (paletteLock)
+            {
+                System.Threading.Volatile.Write(ref palette, null);
+                paletteFactory = factory;
+            }
+        }
+
+        private static BlockPalette BuildPalette()
+        {
+            lock (paletteLock)
+            {
+                if (palette is { } built)
+                    return built;
+                built = paletteFactory?.Invoke() ?? new Palette112();
+                paletteFactory = null;
+                System.Threading.Volatile.Write(ref palette, built);
+                return built;
+            }
+        }
 
         /// <summary>
         /// Storage for block ID and metadata, as ushort for compatibility, performance and lower memory footprint

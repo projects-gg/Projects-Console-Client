@@ -58,8 +58,12 @@ namespace MinecraftClient.ChatBots
         private bool started;
         private long sequence;
         private long arrivals;
+        private long latestStop;
         private int droppedEvents;
         private volatile bool outputClosed;
+
+        /// <summary>Arrival number of the last <c>stop</c> read (0 before the first): it stops movement at the next tick.</summary>
+        public long LatestStopArrival => Interlocked.Read(ref latestStop);
 
         /// <summary>Both descriptors are named in the environment.</summary>
         public static bool Configured => TryGetDescriptor(FdOutEnvVar, out _) && TryGetDescriptor(FdInEnvVar, out _);
@@ -314,12 +318,17 @@ namespace MinecraftClient.ChatBots
                 return;
             }
 
-            if (inbox.Count >= MaxQueuedOperations)
+            // A stop is never "busy": it gets in while the queue holds up to twice its size, and it stops movement at the
+            // next tick, ahead of what waits (version 3).
+            bool stop = operation.Op == AgentOperation.Stop;
+            if (inbox.Count >= MaxQueuedOperations && !(stop && inbox.Count < 2 * MaxQueuedOperations))
             {
                 Refuse(operation.Id, operation.Op, "busy");
                 return;
             }
 
+            if (stop)
+                Interlocked.Exchange(ref latestStop, arrival);
             inbox.Enqueue(operation);
         }
 
