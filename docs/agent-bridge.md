@@ -558,6 +558,40 @@ A new session starts idle and not sneaking; a disconnection ends what ran withou
 | `not_allowed` | a name not in `MCC_AGENT_FOLLOW`, or the account's own |
 | `not_visible` | that player is not in sight (64 blocks) |
 
+## Client 4.2.3: heads and styled text
+
+For the cloud's inventory view (projects-studio `services/cloud-afk/README.md`, "Inventory"): a player head's own skin
+and names and lore in the colours the game's tooltip draws them in. Items gain four optional fields; the plain `name`,
+`itemName` and `lore` stay exactly as before (trade checks read them), and a host that does not know the fields ignores
+them.
+
+```json
+{"slot":3,"id":"minecraft:player_head","count":1,"skin":"8a6d…0998",
+ "name":"Kılıç","nameStyle":[[5,"6lo"]],
+ "lore":["Hasar +12","","Yeşil kalın sade"],"loreStyle":[[[6,"7"],[3,"c"]],null,[[6,"a"],[6,"al"],[4,"o"]]]}
+```
+
+| Field | Meaning | Trust |
+| --- | --- | --- |
+| `skin` | a head's skin: the hash of its texture on Mojang's texture server, from the profile's `textures` property (base64 JSON, `textures.SKIN.url`; before 1.20.5 `SkullOwner.Properties.textures`), only for `http(s)://textures.minecraft.net/texture/` and 16–64 hex digits, lower case. Any other address, a cape only or a value that does not read: none. A profile with only a name or an id (the game would look the skin up) has none | server data (an address, not text) |
+| `nameStyle`, `itemNameStyle` | the look of `name` and `itemName` | server or plugin text |
+| `loreStyle` | one entry a `lore` line: its look, or `null`. Left out when no line has one | anyone's text |
+
+A look is spans over the plain text: `[[length, code], ...]`, the lengths in UTF-16 code units adding up to the text's
+length. A code is a colour, one of `0`–`f` (the game's 16, as its formatting codes) or `#rrggbb`, or none (the field's
+own: the rarity colour for names, dark purple for lore), followed by the flags that are on, in the order `k` obfuscated,
+`l` bold, `m` strikethrough, `n` underlined, `o` italic. The spans carry no text.
+
+- The client walks the text component itself (ChatParser's `§` string loses an `italic: false` at the root and whether
+  a colour came from the component or from a code in its text): `extra` inherits, a list is its first part with the
+  others after it, `translate` takes the component's look (its arguments' own looks are not kept). Codes inside a text
+  follow the game: a colour code sets the colour and turns every flag off, a flag code adds its flag, `§r` goes back to
+  the text's own look.
+- Lore starts italic and a custom name starts italic, as in the game; `itemName` starts with no flags.
+- When the walk does not come to exactly the plain text (a line break or a surrogate pair split between two parts,
+  nesting deeper than 64, ...), the field has no look. A text cut at 256 characters keeps the spans of what is left. A field whose one span is the field's own look (no colour, no flags) has none
+  either; adjacent spans with the same code are one; a look of more than 64 spans is left out.
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and

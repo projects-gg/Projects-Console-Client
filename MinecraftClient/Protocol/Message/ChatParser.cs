@@ -648,7 +648,7 @@ namespace MinecraftClient.Protocol.Message
         /// <param name="rulename">Name of the rule, chosen by the server</param>
         /// <param name="using_data">Data to be used in the rule</param>
         /// <returns>Returns the formatted text according to the given data</returns>
-        private static string TranslateString(string rulename, List<string> using_data)
+        internal static string TranslateString(string rulename, List<string> using_data)
         {
             if (!RulesInitialized)
             {
