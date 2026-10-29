@@ -646,6 +646,56 @@ know them ignores them.
   `st`.
 - Only with the console kinds on: otherwise the client keeps no component of a line.
 
+## Client 4.2.4: dialog cards
+
+For a server's dialog (1.21.6+: notices, confirmations, multi-action lists, server links) drawn as a card in the cloud
+console (projects-studio `services/cloud-afk/README.md`, "Dialog cards"). Only with the console kinds on, like the
+looks; the `connecting` event then lists `"caps":["dialog"]`, and a host turns the cards on by that, not by the
+client's version.
+
+```text
+<nonce>@@MCC@@{"e":"dialog","rev":3,"dialog":{"title":"Kurallar","titleSt":[[8,"6l"]],"body":[{"text":"Kuralları oku.","st":[[14,"7"]]}],"inputs":[{"key":"team","kind":"option","label":"Takım","options":[{"id":"red","label":"Kırmızı"},{"id":"blue","label":"Mavi"}],"initial":"red"}],"buttons":[{"i":1,"label":"Katıl","a":"run_command","v":"/team join $(team)"},{"i":2,"label":"Kabul","a":"custom"},{"i":3,"label":"Kapat","a":"close"}],"cancel":true,"play":true,"cols":2}}
+<nonce>@@MCC@@{"e":"dialog","rev":3,"clear":true}
+<nonce>@@MCC@@{"e":"dialogres","rev":3,"ok":false,"why":"cmd"}
+```
+
+- `rev` counts the dialogs of one connection (a nested dialog is the next one); the host keeps no dialog across a
+  `connecting`, `joined` or `disconnected`. `clear` also reports a dialog the card cannot show as the game does: the
+  console keeps the client's plain lines of it.
+- `title` (at most 128 code units), each `body` part's `text` (at most 512, line breaks as `\n`, at most 16 lines;
+  at most 8 parts; an item part is its description) and every `label` (at most 64) come without formatting codes and
+  without the characters of the rule list ("Client 4.2.4: console line looks"), cut with `…`; `titleSt`, `st` and
+  `labelSt` are their looks as spans (at most 16, 64 and 16 of them).
+- `inputs`, at most 8, keys `[A-Za-z0-9_]{1,32}` and each once: `text` (`max` 1–256, `multiline`, `initial`), `bool`
+  (`initial`; `onTrue` and `onFalse`, what a command template gets), `option` (1–16 `options`, ids 1–64 code units,
+  `initial` one of them), `range` (`start`, `end`, `step`, `initial`, finite). `hideLabel` when the game hides the
+  label.
+- `buttons`, at most 12, `i` the button's number: `run_command` (`v` the template, starting with `/`: the client runs a
+  dialog's command with or without one), `open_url`, `suggest_command` and `copy_to_clipboard` (`v` as a console click:
+  1–256 code units outside the rule list, never cut; an address as the console's rule wants it), `custom` (a custom
+  click: its id and payload stay in the client), `dialog` (opens a nested one), `close`.
+- `cancel`: the card may close the dialog (the game lets the player close it, and closing runs no command). `play`:
+  false while the client is configuring, when no command runs. `cols` 1–4.
+- A dialog with anything else (an unknown action or input, a value outside the rules, more than the caps above) or of
+  more than 8192 bytes is reported as `clear`.
+
+The host presses with an internal command on stdin (the host's own line: a player's line never starts with `\`):
+
+```text
+\dialog act {"rev":3,"i":1,"inputs":{"team":"blue"},"cmd":"/team join blue"}
+\dialog act {"rev":3,"cancel":true}
+```
+
+- Only on the dialog of `rev`, and only when the client shows it as a card. The inputs are set first (each checked as
+  `\dialog set` checks it, and as a value: at most 256 code units outside the rule list, a line break only in a
+  multiline text), then button `i` is pressed: a `run_command` button only in play and only when `cmd` is exactly its
+  template filled in from the inputs (what the player confirmed); the client never sends another command.
+- The line holds no `%` (the client expands `%name%` in its internal commands): the host writes it inside JSON strings
+  as `\u0025`. At most 4096 characters.
+- The answer is one `dialogres` event: `ok`, or `why`: `line` (unreadable), `stale` (another dialog, or none), `button`,
+  `input`, `cmd`, `phase` (a command while configuring), `cancel` (the card may not close it), `failed`. Nothing is
+  printed to the console.
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and
@@ -697,6 +747,8 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   ahead of time: less to compile at start, and code pages that all clients on a machine share).
 - Since 4.2.4: the console line looks (above), only with `MCC_CONSOLE_KINDS`; the item spans of 4.2.3 keep a
   translation's arguments' own looks.
+- Since 4.2.4: dialog cards (above), only with `MCC_CONSOLE_KINDS`. For every user: a dialog's command without `/`
+  runs as a command (before, the client sent it as chat).
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

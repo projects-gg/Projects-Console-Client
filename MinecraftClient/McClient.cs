@@ -299,6 +299,7 @@ namespace MinecraftClient
             Log.WarnEnabled = Config.Logging.WarningMessages;
             Log.ErrorEnabled = Config.Logging.ErrorMessages;
             Dialogs = new DialogManager(this);
+            ConsoleDialogs.Attach(Dialogs);
 
             // SENTRY: Send our client version and server version to Sentry
             SentrySdk.ConfigureScope(scope =>
