@@ -1104,11 +1104,11 @@ namespace MinecraftClient.Protocol.Handlers
                             break;
 
                         var senderUuid = dataTypes.ReadNextUUID(packetData);
-                        var senderDisplayName = ChatParser.ParseText(dataTypes.ReadNextString(packetData));
+                        var senderDisplayJson = dataTypes.ReadNextString(packetData);
+                        var senderDisplayName = ChatParser.ParseText(senderDisplayJson);
                         var hasSenderTeamName = dataTypes.ReadNextBool(packetData);
-                        var senderTeamName = hasSenderTeamName
-                            ? ChatParser.ParseText(dataTypes.ReadNextString(packetData))
-                            : null;
+                        var senderTeamJson = hasSenderTeamName ? dataTypes.ReadNextString(packetData) : null;
+                        var senderTeamName = senderTeamJson is not null ? ChatParser.ParseText(senderTeamJson) : null;
 
                         var timestamp = dataTypes.ReadNextLong(packetData);
                         var salt = dataTypes.ReadNextLong(packetData);
@@ -1127,7 +1127,11 @@ namespace MinecraftClient.Protocol.Handlers
                         }
 
                         ChatMessage chat = new(signedChat, true, messageType, senderUuid, unsignedChatContent,
-                            senderDisplayName, senderTeamName, timestamp, messageSignature, verifyResult);
+                            senderDisplayName, senderTeamName, timestamp, messageSignature, verifyResult)
+                        {
+                            rawSender = ChatBots.ConsoleKinds.Keep(senderDisplayJson),
+                            rawTarget = ChatBots.ConsoleKinds.Keep(senderTeamJson)
+                        };
                         if (hidden119)
                             handler.OnTextObserved(chat);
                         else
@@ -1273,8 +1277,9 @@ namespace MinecraftClient.Protocol.Handlers
 
                         // Other
                         var playerContentClicks = ChatClicks.NewListIfCollecting();
+                        object? unsignedRaw = null;
                         var unsignedChatContent = dataTypes.ReadNextBool(packetData)
-                            ? dataTypes.ReadNextChat(packetData, playerContentClicks)
+                            ? dataTypes.ReadNextChat(packetData, playerContentClicks, out unsignedRaw)
                             : null;
 
                         var filterType = (MessageFilterType)dataTypes.ReadNextVarInt(packetData);
@@ -1293,9 +1298,10 @@ namespace MinecraftClient.Protocol.Handlers
                         var chatTypeId = ChatParser.ReadChatTypeHolder(
                             dataTypes, packetData, protocolVersion, out var directChatTypeDecoration);
                         var playerSenderClicks = ChatClicks.NewListIfCollecting();
-                        var chatName = dataTypes.ReadNextChat(packetData, playerSenderClicks);
+                        var chatName = dataTypes.ReadNextChat(packetData, playerSenderClicks, out object senderRaw);
+                        object? targetRaw = null;
                         var targetName = dataTypes.ReadNextBool(packetData)
-                            ? dataTypes.ReadNextChat(packetData, playerSenderClicks)
+                            ? dataTypes.ReadNextChat(packetData, playerSenderClicks, out targetRaw)
                             : null;
 
                         var messageTypeEnum =
@@ -1344,7 +1350,13 @@ namespace MinecraftClient.Protocol.Handlers
                             senderDisplayName, senderTeamName, timestamp, messageSignature, verifyResult)
                         {
                             chatTypeDecoration = directChatTypeDecoration,
-                            clicks = MergeClicks(playerSenderClicks, playerContentClicks)
+                            clicks = MergeClicks(playerSenderClicks, playerContentClicks),
+                            rawUnsigned = ChatBots.ConsoleKinds.Keep(unsignedRaw),
+                            // The sender's component, only while the display name is its text (not the tab list's).
+                            rawSender = ReferenceEquals(senderDisplayName, chatName)
+                                ? ChatBots.ConsoleKinds.Keep(senderRaw)
+                                : null,
+                            rawTarget = ChatBots.ConsoleKinds.Keep(targetRaw)
                         };
                         lock (MessageSigningLock)
                             Acknowledge(chat);
@@ -1381,7 +1393,7 @@ namespace MinecraftClient.Protocol.Handlers
                     break;
                 case PacketTypesIn.SystemChat:
                     var systemClicks = ChatClicks.NewListIfCollecting();
-                    var systemMessage = dataTypes.ReadNextChat(packetData, systemClicks);
+                    var systemMessage = dataTypes.ReadNextChat(packetData, systemClicks, out object systemRaw);
 
                     if (protocolVersion >= MC_1_19_3_Version)
                     {
@@ -1389,7 +1401,8 @@ namespace MinecraftClient.Protocol.Handlers
                         ChatMessage systemChat = new(systemMessage, null, false, -1, Guid.Empty, true)
                         {
                             isOverlay = isOverlay,
-                            clicks = systemClicks
+                            clicks = systemClicks,
+                            rawContent = ChatBots.ConsoleKinds.Keep(systemRaw)
                         };
 
                         if (isOverlay ? !Config.Main.Advanced.ShowXPBarMessages : !Config.Main.Advanced.ShowSystemMessages)
@@ -1404,7 +1417,10 @@ namespace MinecraftClient.Protocol.Handlers
                     else
                     {
                         var msgType = dataTypes.ReadNextVarInt(packetData);
-                        ChatMessage systemChat119 = new(systemMessage, null, true, msgType, Guid.Empty, true);
+                        ChatMessage systemChat119 = new(systemMessage, null, true, msgType, Guid.Empty, true)
+                        {
+                            rawContent = ChatBots.ConsoleKinds.Keep(systemRaw)
+                        };
                         if (msgType == 1 && !Config.Main.Advanced.ShowSystemMessages)
                         {
                             // The console kinds still get hidden lines (the host decides what to show).
@@ -1419,13 +1435,14 @@ namespace MinecraftClient.Protocol.Handlers
                     break;
                 case PacketTypesIn.ProfilelessChatMessage:
                     var profilelessContentClicks = ChatClicks.NewListIfCollecting();
-                    var message_ = dataTypes.ReadNextChat(packetData, profilelessContentClicks);
+                    var message_ = dataTypes.ReadNextChat(packetData, profilelessContentClicks, out object profilelessRaw);
                     var messageType_ = ChatParser.ReadChatTypeHolder(
                         dataTypes, packetData, protocolVersion, out var directProfilelessChatTypeDecoration);
                     var profilelessSenderClicks = ChatClicks.NewListIfCollecting();
-                    var messageName = dataTypes.ReadNextChat(packetData, profilelessSenderClicks);
+                    var messageName = dataTypes.ReadNextChat(packetData, profilelessSenderClicks, out object profilelessName);
+                    object? profilelessTarget = null;
                     var targetName_ = dataTypes.ReadNextBool(packetData)
-                        ? dataTypes.ReadNextChat(packetData, profilelessSenderClicks)
+                        ? dataTypes.ReadNextChat(packetData, profilelessSenderClicks, out profilelessTarget)
                         : null;
                     ChatMessage profilelessChat = new(message_, messageName, false, messageType_,
                         Guid.Empty, true);
@@ -1434,6 +1451,9 @@ namespace MinecraftClient.Protocol.Handlers
                     profilelessChat.chatTypeDecoration = directProfilelessChatTypeDecoration;
                     profilelessChat.clicks = MergeClicks(profilelessSenderClicks, profilelessContentClicks);
                     profilelessChat.isProfileless = true;
+                    profilelessChat.rawContent = ChatBots.ConsoleKinds.Keep(profilelessRaw);
+                    profilelessChat.rawSender = ChatBots.ConsoleKinds.Keep(profilelessName);
+                    profilelessChat.rawTarget = ChatBots.ConsoleKinds.Keep(profilelessTarget);
                     handler.OnTextReceived(profilelessChat);
                     break;
                 case PacketTypesIn.ActionBar:
@@ -1442,11 +1462,12 @@ namespace MinecraftClient.Protocol.Handlers
                     if (ChatClicks.Collecting || ChatBots.ConsoleKinds.Enabled)
                     {
                         var actionBarClicks = new List<ChatClick>();
-                        var actionBarText = dataTypes.ReadNextChat(packetData, actionBarClicks);
+                        var actionBarText = dataTypes.ReadNextChat(packetData, actionBarClicks, out object actionBarRaw);
                         handler.OnTextObserved(new(actionBarText, null, false, -1, Guid.Empty, true)
                         {
                             isOverlay = true,
-                            clicks = actionBarClicks
+                            clicks = actionBarClicks,
+                            rawContent = ChatBots.ConsoleKinds.Keep(actionBarRaw)
                         });
                     }
 
@@ -2038,11 +2059,19 @@ namespace MinecraftClient.Protocol.Handlers
                 case PacketTypesIn.SetTitleText:
                     // 1.17+: titles come in packets of their own. Read only for the console kinds.
                     if (ChatBots.ConsoleKinds.Enabled)
-                        ChatBots.ConsoleKinds.WriteTitle(false, dataTypes.ReadNextChat(packetData));
+                    {
+                        var titleText = dataTypes.ReadNextChat(packetData, null, out object titleRaw);
+                        ChatBots.ConsoleKinds.WriteTitle(false, titleText, titleRaw);
+                    }
+
                     break;
                 case PacketTypesIn.SetTitleSubTitle:
                     if (ChatBots.ConsoleKinds.Enabled)
-                        ChatBots.ConsoleKinds.WriteTitle(true, dataTypes.ReadNextChat(packetData));
+                    {
+                        var subtitleText = dataTypes.ReadNextChat(packetData, null, out object subtitleRaw);
+                        ChatBots.ConsoleKinds.WriteTitle(true, subtitleText, subtitleRaw);
+                    }
+
                     break;
                 case PacketTypesIn.BossBar:
                     // Read only for the console kinds (the client keeps no boss bars of its own).

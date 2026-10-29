@@ -55,6 +55,14 @@ namespace MinecraftClient.Protocol.Message
 
         internal ChatParser.ChatTypeDecoration? chatTypeDecoration;
 
+        /// <summary>
+        /// The text components as the server sent them (an NBT tree, or JSON text), for the console looks (client
+        /// 4.2.4): the content of a system, profileless or action bar line, the unsigned content, the sender's name
+        /// (only when <see cref="displayName"/> is its text) and the target. Kept only while
+        /// <see cref="ChatBots.ConsoleKinds.Enabled"/>; null otherwise.
+        /// </summary>
+        internal object? rawContent, rawUnsigned, rawSender, rawTarget;
+
         public ChatMessage(string content, bool isJson, int chatType, Guid senderUUID, string? unsignedContent, string displayName, string? teamName, long timestamp, byte[]? signature, bool isSignatureLegal)
         {
             isSignedChat = true;

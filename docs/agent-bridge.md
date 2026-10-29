@@ -422,6 +422,7 @@ event line; the client says where it saw the line and the host decides what kind
 | `ct` | `player` only: the chat type's registry id (1.19+, when the server's registry named it), such as `minecraft:msg_command_incoming` |
 | `who` | `player`: the sender (its tab list name, else the display name), for `minecraft:msg_command_outgoing` the recipient; `system` with `guess`: the parse's sender |
 | `guess` | `system` only: the client's own parse, in its auto-replies' order: `chat` (`IsChatMessage`, with `[ChatFormat]` `Public`), else `pm` (`IsPrivateMessage`, with `Private`) |
+| `st`, `ev` | client 4.2.4: the line's looks, clicks and hovers ("Client 4.2.4: console line looks") |
 
 - `ShowSystemMessages` and `ShowXPBarMessages` hide nothing from these events, and titles, which the console never
   printed, are events too. Chat links (`ShowChatLinks`) are `client` lines. stderr and the other bridge events are
@@ -584,13 +585,66 @@ own: the rarity colour for names, dark purple for lore), followed by the flags t
 
 - The client walks the text component itself (ChatParser's `§` string loses an `italic: false` at the root and whether
   a colour came from the component or from a code in its text): `extra` inherits, a list is its first part with the
-  others after it, `translate` takes the component's look (its arguments' own looks are not kept). Codes inside a text
+  others after it, `translate` takes the component's look and its arguments their own over it (since 4.2.4; 4.2.3 gave
+  the arguments the translation's look). Codes inside a text
   follow the game: a colour code sets the colour and turns every flag off, a flag code adds its flag, `§r` goes back to
   the text's own look.
 - Lore starts italic and a custom name starts italic, as in the game; `itemName` starts with no flags.
 - When the walk does not come to exactly the plain text (a line break or a surrogate pair split between two parts,
   nesting deeper than 64, ...), the field has no look. A text cut at 256 characters keeps the spans of what is left. A field whose one span is the field's own look (no colour, no flags) has none
   either; adjacent spans with the same code are one; a look of more than 64 spans is left out.
+
+## Client 4.2.4: console line looks
+
+For the console in the game's colours, with its hovers and clicks (projects-studio `services/cloud-afk/README.md`,
+"Console and logs"): a console kinds `line` event gains two optional fields. `text` stays exactly as before and is the
+only text a host matches, masks, searches or gives an AI; the fields carry no text of the line, and a host that does not
+know them ignores them.
+
+```text
+<nonce>@@MCC@@{"e":"line","src":"player","text":"<FrostyOtter88> lobiye geliyorum","who":"FrostyOtter88","st":[[1,""],[13,"b",0],[18,""]],"ev":[{"click":{"a":"suggest_command","v":"/tell FrostyOtter88 "},"hover":{"entity":{"id":"minecraft:player","name":"FrostyOtter88"}}}]}
+```
+
+| Field | Meaning | Trust |
+| --- | --- | --- |
+| `st` | spans over `text`: `[length, code]` or `[length, code, event]`, the lengths in UTF-16 code units adding up to the length of `text`, the code as in 4.2.3 (none: the line's own colour), `event` an index into `ev` | server or player text |
+| `ev` | the parts' events, at most 8, each `{"click": {"a", "v"}, "hover": {...}}` with either or both | server or player text |
+
+- Clicks: only `run_command` (its value starts with `/` and has at least 2 code units), `suggest_command`, `open_url`
+  and `copy_to_clipboard`, the value 1–256 code units of well-formed text without a character of the rule list (the
+  same in the client, the machine, the Worker and the apps): a control character (C0, DEL, C1), U+00AD, U+034F,
+  U+061C, U+115F, U+1160, U+180E, U+200B–U+200F, U+2028–U+202E, U+2060–U+2064, U+2066–U+2069, U+3164, U+FEFF,
+  U+FFA0 or a tag character (U+E0000–U+E007F). An `open_url` address is `https://` without white space, without user
+  info (`@`) before the host, with a port of digits only, and with a host of two or more plain ASCII labels (letters,
+  digits and inner hyphens): no Unicode or `xn--` (punycode) label, no IP address (v4, v6 or a number) and no
+  `localhost` or `*.localhost`. A longer value is never cut (a cut command would be another command): that click is
+  left out, as is every other action (`change_page`, `show_dialog`, `custom`, ...). A part's own click hides its
+  parent's, also when it is one of those.
+- Hovers, one of:
+  - `{"text", "st"?}` (`show_text`): the text walked on its own, its parts' clicks and hovers not followed; line breaks
+    as `\n`, at most 8 lines, the characters above left out, at most 256 code units (a cut text ends with `…`), at most
+    16 spans without events;
+  - `{"item": {...}}` (`show_item`): the item as "Items" writes one, without `slot`, `fp`, `cnames` and `components`
+    (but a head's `minecraft:profile` `name`), read from the 1.20.5+ form (`id`, `count`, `components`: custom and item
+    name, lore, profile, enchantments, damage, potion) with its looks; the form before (an SNBT `tag`) gives `id` and
+    `count` only; at most 2048 bytes (past it the looks go, then lore lines from the end);
+  - `{"entity": {"id", "name"?, "st"?}}` (`show_entity`): the type's registry id and the name (at most 64 code units),
+    never the UUID.
+- The client walks the components the server sent, as the game styles them: `extra` inherits, a list is its first part
+  with the others after it, a translation's arguments keep their own looks over the translation's, codes inside a text
+  follow the game (a colour code keeps the part's click and hover), and click and hover are inherited each on its own. A
+  signed message is put together the way the client puts its text together (`ParseSignedChat`): the chat type's
+  decoration with the decoration's style, else the message type's translation. A sender's name the client took from the
+  tab list is its text, without events.
+- `st` and `ev` are written only when that walk comes to exactly `text` (cut at 8192, the spans of what is left).
+  Otherwise the looks come from the client's own formatted text (no `ev`); when that does not come to `text` either, the
+  line has neither field. The client's own lines (`client`, `error`), and the titles and action bar of protocols before
+  1.17, get their looks from their formatting codes.
+- Caps: at most 64 spans (a line with more has neither field); at most 8 distinct events (the parts of any further one
+  have no index); `st` and `ev` together at most 4096 bytes of JSON: past it the hovers go first, then the events, then
+  the spans. Adjacent spans with the same code and event are one; a line whose one span has no look and no event has no
+  `st`.
+- Only with the console kinds on: otherwise the client keeps no component of a line.
 
 ## Host notes (`afk-host`)
 
@@ -641,6 +695,8 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   strings back as plain UTF-8.
 - Since 4.2.2: lean mode, only with `MCC_LEAN` (above). The Linux packages are published ReadyToRun (code compiled
   ahead of time: less to compile at start, and code pages that all clients on a machine share).
+- Since 4.2.4: the console line looks (above), only with `MCC_CONSOLE_KINDS`; the item spans of 4.2.3 keep a
+  translation's arguments' own looks.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);
