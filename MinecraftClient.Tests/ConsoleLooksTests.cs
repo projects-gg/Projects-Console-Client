@@ -523,4 +523,50 @@ public sealed class ConsoleLooksTests : IDisposable
             ConsoleKinds.Enabled = previous;
         }
     }
+
+    /// <summary>The contract's one rule list (TASTE-SWEEP): built from code points, so no file hides a character.</summary>
+    public static IEnumerable<object[]> RefusedByTheRuleList()
+    {
+        foreach (int cp in new[] { 0xAD, 0x34F, 0x115F, 0x1160, 0x180E, 0x200B, 0x200C, 0x200D, 0x2060, 0x2064, 0x3164, 0xFEFF, 0xFFA0, 0xE0000, 0xE0041, 0xE007F })
+        {
+            string ch = char.ConvertFromUtf32(cp);
+            yield return new object[] { "copy_to_clipboard", "a" + ch + "b" };
+            yield return new object[] { "run_command", "/pay" + ch + " NetherKurt 1" };
+        }
+
+        foreach (string url in new[]
+                 {
+                     "https://projects.gg@evil.example/", "https://user:pass@projects.gg/",
+                     "https://proj" + char.ConvertFromUtf32(0x435) + "cts.gg/", "https://xn--prjects-6ve.gg/",
+                     "https://192.168.1.1/", "https://127.0.0.1:8080/", "https://[::1]/", "https://2130706433/",
+                     "https://0x7f.0.0.1/", "https://localhost/", "https://panel.localhost/", "https://intranet/",
+                     "https://projects.gg:abc/", "https://projects..gg/", "https://projects.gg" + char.ConvertFromUtf32(0xFEFF) + "/",
+                 })
+            yield return new object[] { "open_url", url };
+    }
+
+    [Theory]
+    [MemberData(nameof(RefusedByTheRuleList))]
+    public void TheRuleListLeavesAClickOut(string action, string value)
+    {
+        Assert.Null(ConsoleLooks.ClickJson(action, value));
+    }
+
+    [Fact]
+    public void PlainAddressesAndPlayersWordsPass()
+    {
+        Assert.NotNull(ConsoleLooks.ClickJson("open_url", "https://projects.gg/kurallar?x=1#y"));
+        Assert.NotNull(ConsoleLooks.ClickJson("open_url", "https://Forum.Projects.GG:8443/t/1"));
+        Assert.NotNull(ConsoleLooks.ClickJson("suggest_command", "/msg NetherKurt Selam, nasılsın?"));
+    }
+
+    [Fact]
+    public void AHoverLeavesInvisibleAndTagCharactersOut()
+    {
+        string zw = char.ConvertFromUtf32(0x200B);
+        string tag = char.ConvertFromUtf32(0xE0041);
+        string json = "{\"text\":\"bilgi\",\"hoverEvent\":{\"action\":\"show_text\",\"contents\":\"a" + zw + "b" + tag + "c\"}}";
+        JsonObject line = SystemLine(json);
+        Assert.Equal("abc", (string?)line["ev"]![0]!["hover"]!["text"]);
+    }
 }

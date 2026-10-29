@@ -355,7 +355,7 @@ namespace MinecraftClient.ChatBots
         {
             if (action is not ("run_command" or "suggest_command" or "open_url" or "copy_to_clipboard"))
                 return null;
-            if (value.Length is < 1 or > MaxValueLength || value.Any(Forbidden)
+            if (value.Length is < 1 or > MaxValueLength || !Clean(value)
                 || !string.Equals(AgentBridgeItems.WellFormed(value), value, StringComparison.Ordinal))
                 return null;
             switch (action)
@@ -375,23 +375,84 @@ namespace MinecraftClient.ChatBots
             });
         }
 
-        private static bool IsHttpsUrl(string value) =>
-            value.StartsWith("https://", StringComparison.Ordinal)
-            && !value.Any(char.IsWhiteSpace)
-            && Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
-            && uri.Scheme == Uri.UriSchemeHttps
-            && uri.Host.Length > 0;
+        /// <summary>
+        /// An address a click may open (the contract's rule, as the machine, the Worker and the apps check it):
+        /// <c>https://</c>, no white space or forbidden character, no user info before the host (<c>@</c>), a port of
+        /// digits only, and a host of two or more plain ASCII labels: no IDN look-alike (Unicode or <c>xn--</c>
+        /// punycode), no IP address (v4, v6 or a number), no <c>localhost</c>.
+        /// </summary>
+        private static bool IsHttpsUrl(string value)
+        {
+            if (!value.StartsWith("https://", StringComparison.Ordinal) || value.Any(char.IsWhiteSpace) || !Clean(value))
+                return false;
+            string rest = value["https://".Length..];
+            int end = rest.IndexOfAny(['/', '?', '#']);
+            string authority = end < 0 ? rest : rest[..end];
+            if (authority.Contains('@') || authority.StartsWith('['))
+                return false;
+            int colon = authority.IndexOf(':');
+            string host = colon < 0 ? authority : authority[..colon];
+            if (colon >= 0)
+            {
+                string port = authority[(colon + 1)..];
+                if (port.Length is < 1 or > 5 || !port.All(char.IsAsciiDigit))
+                    return false;
+            }
+
+            string[] labels = host.Split('.');
+            if (labels.Length < 2 || !labels.All(IsLabel))
+                return false;
+            if (labels.Any(label => label.StartsWith("xn--", StringComparison.OrdinalIgnoreCase)))
+                return false;
+            if (labels[^1].All(char.IsAsciiDigit))
+                return false;
+            string lower = host.ToLowerInvariant();
+            if (lower == "localhost" || lower.EndsWith(".localhost", StringComparison.Ordinal))
+                return false;
+            return Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
+                && uri.Scheme == Uri.UriSchemeHttps
+                && uri.UserInfo.Length == 0
+                && string.Equals(uri.Host, lower, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>A host label: 1 to 63 ASCII letters, digits and hyphens, a hyphen at neither end.</summary>
+        private static bool IsLabel(string label) =>
+            label.Length is >= 1 and <= 63
+            && label.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')
+            && label[0] != '-'
+            && label[^1] != '-';
 
         /// <summary>
-        /// A character no click value carries and hover texts leave out: controls (C0, DEL, C1), the bidirectional marks,
-        /// embeddings, overrides and isolates, and the line and paragraph separators.
+        /// A character no click value carries and hover texts leave out (the contract's one list, the same in the machine,
+        /// the Worker and the apps): controls (C0, DEL, C1), the soft hyphen, the combining grapheme joiner, the Arabic
+        /// letter mark, the Hangul and Mongolian fillers, the zero-width characters and direction marks (U+200B-U+200F),
+        /// the separators, embeddings and overrides (U+2028-U+202E), the invisible operators (U+2060-U+2064), the
+        /// isolates, U+FEFF and the halfwidth Hangul filler. Tag characters are <see cref="IsTag"/>'s.
         /// </summary>
         internal static bool Forbidden(char c) =>
             c < ' '
             || c is >= '\u007F' and <= '\u009F'
-            || c is '\u061C' or '\u200E' or '\u200F' or '\u2028' or '\u2029'
-            || c is >= '\u202A' and <= '\u202E'
+            || c is '\u00AD' or '\u034F' or '\u061C' or '\u115F' or '\u1160' or '\u180E' or '\u3164' or '\uFEFF' or '\uFFA0'
+            || c is >= '\u200B' and <= '\u200F'
+            || c is >= '\u2028' and <= '\u202E'
+            || c is >= '\u2060' and <= '\u2064'
             || c is >= '\u2066' and <= '\u2069';
+
+        /// <summary>A tag character (U+E0000-U+E007F) at <paramref name="i"/>: U+DB40 and a low half up to U+DC7F.</summary>
+        internal static bool IsTag(string s, int i) =>
+            s[i] == '\uDB40' && i + 1 < s.Length && s[i + 1] is >= '\uDC00' and <= '\uDC7F';
+
+        /// <summary>No forbidden character and no tag character.</summary>
+        internal static bool Clean(string s)
+        {
+            for (int i = 0; i < s.Length; i++)
+            {
+                if (Forbidden(s[i]) || IsTag(s, i))
+                    return false;
+            }
+
+            return true;
+        }
 
         /// <summary>A hover as the console reports it (<c>{text, st?}</c>, <c>{item}</c> or <c>{entity}</c>), or null.</summary>
         private static string? HoverJson(AgentBridgeText.HoverRef hover)
@@ -472,8 +533,11 @@ namespace MinecraftClient.ChatBots
 
                         lines++;
                     }
-                    else if (Forbidden(c))
+                    else if (Forbidden(c) || IsTag(shown, i))
                     {
+                        // A tag character is two code units: both stay out.
+                        if (IsTag(shown, i))
+                            i++;
                         continue;
                     }
 

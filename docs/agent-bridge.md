@@ -610,12 +610,16 @@ know them ignores them.
 | `st` | spans over `text`: `[length, code]` or `[length, code, event]`, the lengths in UTF-16 code units adding up to the length of `text`, the code as in 4.2.3 (none: the line's own colour), `event` an index into `ev` | server or player text |
 | `ev` | the parts' events, at most 8, each `{"click": {"a", "v"}, "hover": {...}}` with either or both | server or player text |
 
-- Clicks: only `run_command` (its value starts with `/`), `suggest_command`, `open_url` (`https://`, a host, no
-  whitespace) and `copy_to_clipboard`, the value 1–256 code units of well-formed text without a control character (C0,
-  DEL, C1), a bidirectional mark, embedding, override or isolate (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or
-  a line or paragraph separator. A longer value is never cut (a cut command would be another command): that click is left
-  out, as is every other action (`change_page`, `show_dialog`, `custom`, ...). A part's own click hides its parent's,
-  also when it is one of those.
+- Clicks: only `run_command` (its value starts with `/` and has at least 2 code units), `suggest_command`, `open_url`
+  and `copy_to_clipboard`, the value 1–256 code units of well-formed text without a character of the rule list (the
+  same in the client, the machine, the Worker and the apps): a control character (C0, DEL, C1), U+00AD, U+034F,
+  U+061C, U+115F, U+1160, U+180E, U+200B–U+200F, U+2028–U+202E, U+2060–U+2064, U+2066–U+2069, U+3164, U+FEFF,
+  U+FFA0 or a tag character (U+E0000–U+E007F). An `open_url` address is `https://` without white space, without user
+  info (`@`) before the host, with a port of digits only, and with a host of two or more plain ASCII labels (letters,
+  digits and inner hyphens): no Unicode or `xn--` (punycode) label, no IP address (v4, v6 or a number) and no
+  `localhost` or `*.localhost`. A longer value is never cut (a cut command would be another command): that click is
+  left out, as is every other action (`change_page`, `show_dialog`, `custom`, ...). A part's own click hides its
+  parent's, also when it is one of those.
 - Hovers, one of:
   - `{"text", "st"?}` (`show_text`): the text walked on its own, its parts' clicks and hovers not followed; line breaks
     as `\n`, at most 8 lines, the characters above left out, at most 256 code units (a cut text ends with `…`), at most
