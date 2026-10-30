@@ -1,5 +1,6 @@
 using Brigadier.NET;
 using Brigadier.NET.Builder;
+using MinecraftClient.ChatBots;
 using MinecraftClient.CommandHandler;
 using MinecraftClient.Dialogs;
 using MinecraftClient.Tui;
@@ -42,6 +43,9 @@ public class Dialog : Command
                 .Executes(r => Cancel(r.Source)))
             .Then(l => l.Literal("dismiss")
                 .Executes(r => Dismiss(r.Source)))
+            .Then(l => l.Literal("act")
+                .Then(l => l.Argument("Press", Arguments.GreedyString())
+                    .Executes(r => Act(r.Source, Arguments.GetString(r, "Press")))))
             .Then(l => l.Literal("_help")
                 .Executes(r => GetUsage(r.Source))
                 .Redirect(dispatcher.GetRoot().GetChild("help").GetChild(CmdName))));
@@ -97,6 +101,20 @@ public class Dialog : Command
     {
         var result = CmdResult.currentHandler!.Dialogs.Cancel();
         return r.SetAndReturn(result.Success ? CmdResult.Status.Done : CmdResult.Status.Fail, result.Message);
+    }
+
+    /// <summary>
+    /// A host's press on its dialog card (docs/agent-bridge.md, "Client 4.2.4: dialog cards"): checked and done by
+    /// <see cref="ConsoleDialogs.Act"/>, answered with a <c>dialogres</c> event line, nothing printed. Without the console
+    /// kinds nobody could read the answer, so nothing is done.
+    /// </summary>
+    private static int Act(CmdResult r, string press)
+    {
+        if (!ConsoleDialogs.Enabled)
+            return r.SetAndReturn(CmdResult.Status.Done, null);
+
+        ConsoleDialogs.Write(ConsoleDialogs.Act(CmdResult.currentHandler!.Dialogs, press));
+        return r.SetAndReturn(CmdResult.Status.Done, null);
     }
 
     private static int Dismiss(CmdResult r)

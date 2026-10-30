@@ -6,9 +6,19 @@ using System.Threading;
 
 namespace MinecraftClient.Dialogs;
 
+/// <summary>What a dialog needs of the client: its log, sending a command, a custom click.</summary>
+internal interface IDialogClient
+{
+    void Info(string text);
+
+    void SendText(string text);
+
+    bool SendCustomClickAction(string id, Dictionary<string, object>? payload);
+}
+
 public sealed class DialogManager
 {
-    private readonly McClient _client;
+    private readonly IDialogClient _client;
     private readonly Lock _lock = new();
     private readonly Dictionary<int, DialogDefinition> _registryById = new();
     private readonly Dictionary<string, DialogDefinition> _registryByName = new(StringComparer.Ordinal);
@@ -17,9 +27,23 @@ public sealed class DialogManager
     private int _revision;
 
     public DialogManager(McClient client)
+        : this(new ClientDialogs(client ?? throw new ArgumentNullException(nameof(client))))
     {
-        ArgumentNullException.ThrowIfNull(client);
+    }
+
+    internal DialogManager(IDialogClient client)
+    {
         _client = client;
+    }
+
+    private sealed class ClientDialogs(McClient client) : IDialogClient
+    {
+        public void Info(string text) => client.Log.Info(text);
+
+        public void SendText(string text) => client.SendText(text);
+
+        public bool SendCustomClickAction(string id, Dictionary<string, object>? payload) =>
+            client.SendCustomClickAction(id, payload);
     }
 
     public event Action<DialogInstance>? DialogShown;
@@ -72,7 +96,7 @@ public sealed class DialogManager
             _current = instance;
         }
 
-        _client.Log.Info("§e" + string.Format(Translations.dialog_received, instance.Definition.DisplayTitle()));
+        _client.Info("§e" + string.Format(Translations.dialog_received, instance.Definition.DisplayTitle()));
         DialogShown?.Invoke(instance);
         return instance;
     }
@@ -111,7 +135,7 @@ public sealed class DialogManager
             _current = null;
         }
 
-        _client.Log.Info(Translations.dialog_cleared);
+        _client.Info(Translations.dialog_cleared);
         DialogCleared?.Invoke(revision);
     }
 
@@ -138,19 +162,92 @@ public sealed class DialogManager
             if (_current is null)
                 return new DialogActionResult(false, Translations.dialog_none);
 
-            var input = _current.Definition.Inputs.FirstOrDefault(input => input.Key.Equals(key, StringComparison.Ordinal));
-            if (input is null)
-                return new DialogActionResult(false, string.Format(Translations.dialog_input_unknown, key));
-
-            var normalized = NormalizeInputValue(input, value, out var error);
-            if (error is not null)
-                return new DialogActionResult(false, error);
-
-            var values = _current.Values.ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal);
-            values[key] = normalized;
-            _current = _current with { Values = values };
-            return new DialogActionResult(true, string.Format(Translations.dialog_input_set, key, normalized));
+            return SetCurrentInput(key, value);
         }
+    }
+
+    /// <summary>
+    /// Sets an input of the dialog of <paramref name="revision"/> only (a card's press: the dialog the player saw, never a
+    /// newer one).
+    /// </summary>
+    internal DialogActionResult SetInput(int revision, string key, string value)
+    {
+        lock (_lock)
+        {
+            if (_current is null || _current.Revision != revision)
+                return new DialogActionResult(false, Translations.dialog_none);
+
+            return SetCurrentInput(key, value);
+        }
+    }
+
+    /// <summary>
+    /// Presses button <paramref name="index"/> of the dialog of <paramref name="revision"/> only; a command button only
+    /// when its command, filled in from the inputs, is exactly <paramref name="command"/> (the command the player
+    /// confirmed). Nothing happens when the dialog changed, the button is unknown or the command differs.
+    /// </summary>
+    internal DialogActionResult Press(int revision, int index, string? command)
+    {
+        DialogInstance? instance;
+        DialogButton? button;
+        lock (_lock)
+        {
+            instance = _current;
+            if (instance is null || instance.Revision != revision)
+                return new DialogActionResult(false, Translations.dialog_none);
+
+            button = instance.Definition.Actions.FirstOrDefault(action => action.Index == index);
+        }
+
+        if (button is null)
+            return new DialogActionResult(false, string.Format(Translations.dialog_action_unknown, index));
+
+        // The command is filled in from the same snapshot Execute sends from: what was compared is what is sent.
+        if (button.Action is { Kind: DialogActionKind.RunCommand } run
+            && !string.Equals(CommandOf(instance, run), command, StringComparison.Ordinal))
+            return new DialogActionResult(false, Translations.dialog_action_invalid);
+
+        return Execute(instance, button.Action, ShouldCloseAfterAction(instance.Definition.AfterAction));
+    }
+
+    /// <summary>Cancels the dialog of <paramref name="revision"/> only.</summary>
+    internal DialogActionResult Cancel(int revision)
+    {
+        lock (_lock)
+        {
+            if (_current is null || _current.Revision != revision)
+                return new DialogActionResult(false, Translations.dialog_none);
+        }
+
+        return Cancel();
+    }
+
+    /// <summary>
+    /// The command a command button sends: its template filled in from the inputs, starting with "/" (the game runs a
+    /// dialog's command with or without one; without it the client would send it as chat).
+    /// </summary>
+    internal static string CommandOf(DialogInstance instance, DialogActionDefinition action)
+    {
+        var command = ApplyTemplate(action.Value ?? string.Empty, BuildActionValues(instance).TemplateValues);
+        return command.StartsWith('/') ? command : "/" + command;
+    }
+
+    /// <summary>Sets an input of the open dialog; the caller holds the lock and has checked there is one.</summary>
+    private DialogActionResult SetCurrentInput(string key, string value)
+    {
+        var current = _current!;
+        var input = current.Definition.Inputs.FirstOrDefault(input => input.Key.Equals(key, StringComparison.Ordinal));
+        if (input is null)
+            return new DialogActionResult(false, string.Format(Translations.dialog_input_unknown, key));
+
+        var normalized = NormalizeInputValue(input, value, out var error);
+        if (error is not null)
+            return new DialogActionResult(false, error);
+
+        var values = current.Values.ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal);
+        values[key] = normalized;
+        _current = current with { Values = values };
+        return new DialogActionResult(true, string.Format(Translations.dialog_input_set, key, normalized));
     }
 
     public DialogActionResult Click(int index)
@@ -229,7 +326,7 @@ public sealed class DialogManager
                 if (instance.Phase != DialogPhase.Play)
                     return new DialogActionResult(false, Translations.dialog_action_command_not_in_play);
 
-                var command = ApplyTemplate(action.Value ?? string.Empty, values.TemplateValues);
+                var command = CommandOf(instance, action);
                 _client.SendText(command);
                 if (closeWhenDone)
                     _ = Dismiss();

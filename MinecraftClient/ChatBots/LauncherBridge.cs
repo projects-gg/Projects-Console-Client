@@ -117,6 +117,9 @@ namespace MinecraftClient.ChatBots
             {
                 ["host"] = GetServerHost(),
                 ["port"] = GetServerPort(),
+                // What this client reports besides the events of its version (docs/agent-bridge.md): a host turns a
+                // feature on by what the client says, not by its version number.
+                ["caps"] = ConsoleDialogs.Enabled ? new[] { ConsoleDialogs.Capability } : null,
             });
         }
 
