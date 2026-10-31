@@ -136,17 +136,51 @@ public sealed class DialogManager
         MenusChanged?.Invoke();
     }
 
-    /// <summary>The connection's phase: the pause screen and the quick actions key exist only in play.</summary>
+    /// <summary>
+    /// The connection's phase: the pause screen and the quick actions key exist only in play. A configuration the server
+    /// starts in play (a proxy's server switch from 1.20.2) shows the game's reconfiguration screen, which closes the
+    /// open dialog (client 4.2.6, <see cref="CloseByGameScreen"/>).
+    /// </summary>
     public void SetPhase(DialogPhase phase)
     {
+        bool reconfiguring;
         lock (_lock)
         {
             if (_phase == phase)
                 return;
+            reconfiguring = _phase == DialogPhase.Play && phase == DialogPhase.Configuration;
             _phase = phase;
         }
 
+        if (reconfiguring)
+            CloseByGameScreen();
         MenusChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// The game shows one of its own screens in the dialog's place (client 4.2.6): its world loading screen at every
+    /// respawn and join (a proxy's server switch ends in one), its reconfiguration screen when the server starts a
+    /// configuration, its connection screen at a transfer or the connection's end. The open dialog, or the "waiting for
+    /// response" screen, closes as it does in the game: nothing is sent to the server and nothing is logged. Reported
+    /// as the dialog's close (<see cref="DialogCleared"/>); false when nothing was open.
+    /// </summary>
+    public bool CloseByGameScreen()
+    {
+        int revision;
+        lock (_lock)
+        {
+            if (_current is { } current)
+                revision = current.Revision;
+            else if (_waiting is { } waiting)
+                revision = waiting;
+            else
+                return false;
+            _current = null;
+            _waiting = null;
+        }
+
+        DialogCleared?.Invoke(revision);
+        return true;
     }
 
     public DialogInstance Show(DialogDefinition definition, DialogPhase phase)

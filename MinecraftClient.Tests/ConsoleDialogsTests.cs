@@ -547,4 +547,55 @@ public sealed class ConsoleDialogsTests : IDisposable
         Assert.Equal(new[] { expected }, client.Sent);
     }
 
+    [Fact]
+    public void TheGameSOwnScreensCloseTheDialogAsInTheGame()
+    {
+        // A respawn, a join (a proxy's server switch ends in one), a transfer or the connection's end (client 4.2.6): the
+        // open dialog is reported closed once, and nothing goes to the server.
+        dialogs.Show(Rules(Standard), DialogPhase.Play);
+        Assert.True(dialogs.CloseByGameScreen());
+        JsonObject closed = Last();
+        Assert.Equal("dialog", (string?)closed["e"]);
+        Assert.Equal(1, (int)closed["rev"]!);
+        Assert.True((bool)closed["clear"]!);
+        Assert.Null(dialogs.Current);
+        int count = lines.Count;
+        Assert.False(dialogs.CloseByGameScreen());
+        Assert.Equal(count, lines.Count);
+        Assert.Empty(client.Sent);
+        Assert.Empty(client.Custom);
+        // A press the card sent before it heard of the close finds nothing.
+        Assert.Equal("stale", (string?)Press(1, 2)["why"]);
+        Assert.Empty(client.Custom);
+
+        // The game's "waiting for response" screen goes the same way.
+        DialogButton ok = new(1, "Tamam", new DialogActionDefinition(DialogActionKind.CustomClick, Id: "projects:ok", Type: "minecraft:custom"));
+        dialogs.Show(Rules(ok) with { AfterAction = DialogAfterAction.WaitForResponse }, DialogPhase.Play);
+        Assert.True((bool)Press(2, 1)["ok"]!);
+        Assert.Equal(3, dialogs.Waiting);
+        Assert.True(dialogs.CloseByGameScreen());
+        Assert.Equal(3, (int)Last()["rev"]!);
+        Assert.True((bool)Last()["clear"]!);
+        Assert.Null(dialogs.Waiting);
+    }
+
+    [Fact]
+    public void AConfigurationTheServerStartsInPlayClosesTheDialog()
+    {
+        // A proxy's server switch from 1.20.2: the server starts a configuration and the game shows its reconfiguration
+        // screen in the dialog's place.
+        dialogs.SetPhase(DialogPhase.Play);
+        dialogs.Show(Rules(Standard), DialogPhase.Play);
+        dialogs.SetPhase(DialogPhase.Configuration);
+        Assert.Null(dialogs.Current);
+        Assert.Contains(Prefix + "{\"e\":\"dialog\",\"rev\":1,\"clear\":true}", lines);
+
+        // A dialog of the configuration is not closed by the configuration's end: the join right after closes it.
+        dialogs.Show(Rules(Standard), DialogPhase.Configuration);
+        dialogs.SetPhase(DialogPhase.Play);
+        Assert.Equal(2, dialogs.Current?.Revision);
+        Assert.True(dialogs.CloseByGameScreen());
+        Assert.Null(dialogs.Current);
+        Assert.True((bool)Last()["clear"]!);
+    }
 }

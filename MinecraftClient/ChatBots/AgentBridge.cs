@@ -280,9 +280,21 @@ namespace MinecraftClient.ChatBots
 
         public override void OnRespawn()
         {
-            // A respawn or another world: what moved stops ("reset"), sneaking ends.
-            if (active && joined)
-                movement?.Moved();
+            if (!active || !joined)
+                return;
+
+            // A respawn or another world (a proxy's server switch before 1.20.2 is one): the game closes the open window
+            // and the client's windows are gone (client 4.2.6).
+            if (window is { } open)
+            {
+                window = null;
+                closingWindowId = -1;
+                windowDirty = false;
+                EmitWindowClose(open.Id, "server");
+            }
+
+            // What moved stops ("reset"), sneaking ends.
+            movement?.Moved();
         }
 
         /// <summary>The host asked for this group of events (<see cref="EventsEnvVar"/>).</summary>

@@ -592,6 +592,8 @@ namespace MinecraftClient
             entities.Clear();
             ClearKnownSigns();
             ClearInventories();
+            // The game shows its connection screen: the old server's dialog closes.
+            CloseDialogScreens();
         }
 
         /// <summary>
@@ -933,6 +935,8 @@ namespace MinecraftClient
             Volatile.Write(ref disconnectOwnerThreadId, Environment.CurrentManagedThreadId);
             instance = null;
             StopConsoleSession();
+            // The connection ends: no dialog of it stays open (reported before the bots' disconnect).
+            CloseDialogScreens();
             return true;
         }
 
@@ -3506,7 +3510,28 @@ namespace MinecraftClient
 
         public void OnDialogPhase(DialogPhase phase)
         {
+            // A configuration the server starts in play closes the open dialog (DialogManager.SetPhase).
             Dialogs.SetPhase(phase);
+            if (phase == DialogPhase.Configuration)
+                Tui.DialogTuiHost.CloseCurrent();
+        }
+
+        /// <summary>
+        /// The game shows its world loading screen (a respawn, a join), or its connection screen (a transfer, the
+        /// connection's end), in place of any dialog: the open dialog closes and is reported closed (client 4.2.6).
+        /// </summary>
+        private void CloseDialogScreens()
+        {
+            try
+            {
+                if (Dialogs.CloseByGameScreen())
+                    Tui.DialogTuiHost.CloseCurrent();
+            }
+            catch (Exception exception) when (exception is not ThreadAbortException)
+            {
+                // Never in the way of a join, a respawn or a disconnect (a closed stdout while the client exits).
+                Log.Warn("Dialog close: " + exception.Message);
+            }
         }
 
         public void OnDialogShown(DialogDefinition dialog, DialogPhase phase)
@@ -3572,6 +3597,10 @@ namespace MinecraftClient
 
             ClearInventories();
 
+            // Every join, a proxy's server switch too, shows the game's world loading screen: an open dialog (one of the
+            // configuration, or the old server's) closes, reported before the bots hear of the join.
+            CloseDialogScreens();
+
             DispatchBotEvent(bot => bot.AfterGameJoined());
 
             ConsoleIO.InitCommandList(dispatcher);
@@ -3582,6 +3611,8 @@ namespace MinecraftClient
         /// </summary>
         public void OnRespawn()
         {
+            // The game shows its world loading screen at every respawn: an open dialog closes.
+            CloseDialogScreens();
             ClearTasks();
 
             if (terrainAndMovementsRequested)
