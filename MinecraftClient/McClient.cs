@@ -3967,7 +3967,11 @@ namespace MinecraftClient
             if (ChatBots.ConsoleKinds.Enabled)
                 ChatBots.ConsoleKinds.WriteChat(message, messageText, ListedPlayerName); // where it came from, unmarked
             else
-                Log.Chat(color + messageText);
+            {
+                // Side events: the line's looks go right before its print (the print itself is unchanged).
+                using (ChatBots.ConsoleSide.Expect(message, messageText))
+                    Log.Chat(color + messageText);
+            }
 
             if (Config.Main.Advanced.ShowChatLinks)
                 foreach (string link in links)

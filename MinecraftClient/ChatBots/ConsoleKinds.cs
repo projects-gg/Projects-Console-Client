@@ -263,6 +263,26 @@ namespace MinecraftClient.ChatBots
             });
         }
 
+        /// <summary>
+        /// A side event (client 4.2.5, <see cref="ConsoleSide"/>): the looks of the classic console line that follows,
+        /// whose text is <paramref name="text"/>.
+        /// </summary>
+        internal static string LooksEvent(string text, ConsoleLooks.Result looks)
+        {
+            return Json(writer =>
+            {
+                writer.WriteString("e", "looks");
+                writer.WriteString("text", text);
+                writer.WritePropertyName("st");
+                writer.WriteRawValue(looks.Spans, skipInputValidation: true);
+                if (looks.Events is not null)
+                {
+                    writer.WritePropertyName("ev");
+                    writer.WriteRawValue(looks.Events, skipInputValidation: true);
+                }
+            });
+        }
+
         internal static string BossEvent(BossBarEvent bossBar)
         {
             return Json(writer =>

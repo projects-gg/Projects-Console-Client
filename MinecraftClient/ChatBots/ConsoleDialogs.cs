@@ -57,8 +57,11 @@ namespace MinecraftClient.ChatBots
             Indented = false,
         };
 
-        /// <summary>Dialog cards are reported while the console kinds are (the host tells events from text by the nonce).</summary>
-        public static bool Enabled => ConsoleKinds.Enabled;
+        /// <summary>
+        /// Dialog cards are reported while the console kinds are, or the side events' <c>dialogs</c> (client 4.2.5; both need
+        /// the bridge's nonce, by which the host tells events from text).
+        /// </summary>
+        public static bool Enabled => ConsoleKinds.Enabled || ConsoleSide.Dialogs;
 
         /// <summary>Reports <paramref name="dialogs"/>' dialogs as event lines while <see cref="Enabled"/>.</summary>
         public static void Attach(DialogManager dialogs)

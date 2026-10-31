@@ -269,10 +269,13 @@ namespace MinecraftClient
                     {
                         output.Append(str);
                     }
-                    Console.WriteLine(OneLinePerWrite ? KeepOnOneLine(output.ToString()) : output.ToString());
+                    string printed = OneLinePerWrite ? KeepOnOneLine(output.ToString()) : output.ToString();
+                    ChatBots.ConsoleSide.BeforePrint(printed);
+                    Console.WriteLine(printed);
                     return;
                 }
                 output.Append(str);
+                ChatBots.ConsoleSide.BeforePrint(output.ToString());
                 output.Append("§r");
                 Backend.WriteLineFormatted(output.ToString());
             }

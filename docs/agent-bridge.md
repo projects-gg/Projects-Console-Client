@@ -696,6 +696,23 @@ The host presses with an internal command on stdin (the host's own line: a playe
   `input`, `cmd`, `phase` (a command while configuring), `cancel` (the card may not close it), `failed`. Nothing is
   printed to the console.
 
+## Client 4.2.5: side events
+
+For a host that keeps the classic console: the looks of console lines and the server's dialogs without console kinds.
+
+- On with `MCC_CONSOLE_SIDE`, a comma-separated list of `looks` and/or `dialogs` (unknown parts ignored), together with
+  the launcher bridge and a valid nonce (as console kinds). While `MCC_CONSOLE_KINDS=1` is on, console kinds carry both
+  and the side events stay off.
+- The console prints exactly what it prints without them: every console line, its order and its bytes stay as they are.
+- `looks`: right before a chat line the console prints (the server's chat and system messages, as `Log.Chat` prints
+  them), the client writes `<nonce>@@MCC@@{"e":"looks","text":"…","st":[…],"ev":[…]}`: `text` is that line as the host
+  reads it (no formatting codes, one line, at most 8192 code units), `st`/`ev` its looks as in "Client 4.2.4: console line
+  looks". It is written only when the printed line is exactly `text` (a timestamp, a signature mark or a cut changes
+  it: then the line goes without looks), and never for a line the console does not print. A host attaches the looks
+  only to the very next console line, only when that line is `text`, and never shows the side line itself.
+- `dialogs`: everything in "Client 4.2.4: dialog cards" (the `dialog` events, `caps: ["dialog"]` in `connecting`,
+  `\dialog act`, `dialogres`), while the console keeps printing the dialog as text as before.
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and
