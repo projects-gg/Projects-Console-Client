@@ -152,9 +152,87 @@ public sealed class ConsoleDialogsTests : IDisposable
         yield return [Rules(Run(1, "Uzun", "say " + new string('x', 260)))];
         yield return [Rules(new DialogButton(1, "?", new DialogActionDefinition(DialogActionKind.Unknown, Type: "dialog_tag")))];
         yield return [Rules(Standard) with { Inputs = [new DialogInput("bad key", DialogInputKind.Text, "x", "")] }];
-        yield return [Rules(Standard) with { Inputs = Enumerable.Range(0, 9).Select(i => new DialogInput("k" + i, DialogInputKind.Text, "x", "")).ToList() }];
-        yield return [Rules(Standard) with { Body = Enumerable.Range(0, 9).Select(i => new DialogBody(DialogBodyKind.PlainMessage, "satır " + i)).ToList() }];
+        // Inputs are never cut (a command needs every one): more than 16 close the card.
+        yield return [Rules(Standard) with { Inputs = Enumerable.Range(0, 17).Select(i => new DialogInput("k" + i, DialogInputKind.Text, "x", "")).ToList() }];
         yield return [Rules(Standard) with { IsResolved = false }];
+    }
+
+    [Fact]
+    public void LongListsAreCutNotDropped()
+    {
+        DialogButton[] many = Enumerable.Range(1, 70)
+            .Select(i => new DialogButton(i, "Sunucu " + i, new DialogActionDefinition(DialogActionKind.CustomClick, Id: "projects:pick", Type: "minecraft:custom")))
+            .ToArray();
+        dialogs.Show(Rules(many) with
+        {
+            Body = Enumerable.Range(0, 20).Select(i => new DialogBody(DialogBodyKind.PlainMessage, "satır " + i)).ToList(),
+        }, DialogPhase.Play);
+
+        JsonObject d = Last()["dialog"]!.AsObject();
+        Assert.Equal(64, d["buttons"]!.AsArray().Count);
+        Assert.Equal(16, d["body"]!.AsArray().Count);
+        Assert.True((bool)d["cut"]!);
+
+        dialogs.Show(Rules(Standard), DialogPhase.Play);
+        Assert.Null(Last()["dialog"]!["cut"]);
+    }
+
+    [Fact]
+    public void TheCardGetsTheGameSOwnDetails()
+    {
+        DialogButton tipped = new(2, "Kabul", new DialogActionDefinition(DialogActionKind.CustomClick, Id: "projects:rules", Type: "minecraft:custom"),
+            Tooltip: "§eKuralları kabul eder", Width: 120);
+        DialogDefinition dialog = Rules(Standard[0], tipped, Standard[2]) with
+        {
+            AfterAction = DialogAfterAction.WaitForResponse,
+            ExitButton = new DialogButton(0, "§cVazgeç", null),
+            Body =
+            [
+                new DialogBody(DialogBodyKind.Item, "Ödül", "minecraft:item",
+                    Item: new Dictionary<string, object> { ["id"] = "minecraft:diamond", ["count"] = 2 },
+                    Description: "Ödül", ShowTooltip: false),
+                new DialogBody(DialogBodyKind.Item, "[Eşya]", "minecraft:item",
+                    Item: new Dictionary<string, object> { ["id"] = "minecraft:emerald" }),
+            ],
+            Inputs =
+            [
+                new DialogInput("note", DialogInputKind.Text, "Not", "", MaxLength: 100, Multiline: true, MaxLines: 4, Height: 64),
+                new DialogInput("amount", DialogInputKind.NumberRange, "Miktar", "5", Start: 0, End: 10, InitialNumber: 5, Step: 1),
+            ],
+        };
+        dialogs.Show(dialog, DialogPhase.Play);
+
+        JsonObject d = Last()["dialog"]!.AsObject();
+        JsonArray buttons = d["buttons"]!.AsArray();
+        Assert.Equal("Kuralları kabul eder", (string?)buttons[1]!["tip"]);
+        Assert.NotNull(buttons[1]!["tipSt"]);
+        Assert.Equal(120, (int)buttons[1]!["w"]!);
+        Assert.Null(buttons[0]!["tip"]);
+        Assert.Equal("wait", (string?)d["after"]);
+        Assert.Equal("Vazgeç", (string?)d["exit"]!["label"]);
+
+        JsonArray body = d["body"]!.AsArray();
+        Assert.Equal(2, body.Count);
+        Assert.Equal("Ödül", (string?)body[0]!["text"]);
+        Assert.Equal("minecraft:diamond", (string?)body[0]!["item"]!["id"]);
+        Assert.True((bool)body[0]!["noTip"]!);
+        // An item without a description of its own: no placeholder text.
+        Assert.Equal("", (string?)body[1]!["text"]);
+        Assert.Equal("minecraft:emerald", (string?)body[1]!["item"]!["id"]);
+
+        JsonArray inputs = d["inputs"]!.AsArray();
+        Assert.Equal(4, (int)inputs[0]!["lines"]!);
+        Assert.Equal(64, (int)inputs[0]!["height"]!);
+        Assert.Equal("%s: %s", (string?)inputs[1]!["fmt"]);
+    }
+
+    [Theory]
+    [InlineData(null, "%s: %s")]
+    [InlineData("options.generic_value", "%s: %s")]
+    [InlineData("no.such.key", null)]
+    public void ANumberInputSaysItsLabelFormat(string? key, string? expected)
+    {
+        Assert.Equal(expected, ConsoleDialogs.LabelFormat(key));
     }
 
     [Theory]

@@ -7,6 +7,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MinecraftClient.Dialogs;
+using MinecraftClient.Protocol.Message;
 using Look = MinecraftClient.ChatBots.AgentBridgeText.Look;
 using Walk = MinecraftClient.ChatBots.AgentBridgeText.Walk;
 
@@ -28,22 +29,31 @@ namespace MinecraftClient.ChatBots
 
         public const int MaxTitle = 128;
         public const int MaxTitleSpans = 16;
-        public const int MaxBodyParts = 8;
+        /// <summary>Most body parts (client 4.2.5: a longer body is cut and the dialog says <c>cut</c>).</summary>
+        public const int MaxBodyParts = 16;
         public const int MaxBodyText = 512;
         public const int MaxBodyLines = 16;
         public const int MaxBodySpans = 64;
         public const int MaxLabel = 64;
         public const int MaxLabelSpans = 16;
-        public const int MaxInputs = 8;
+        /// <summary>A button's tooltip (client 4.2.5).</summary>
+        public const int MaxTooltip = 256;
+        public const int MaxTooltipLines = 8;
+        public const int MaxTooltipSpans = 32;
+        /// <summary>Most inputs: a command needs every one, so a dialog with more is reported closed.</summary>
+        public const int MaxInputs = 16;
         public const int MaxOptions = 16;
         public const int MaxOptionId = 64;
-        public const int MaxButtons = 12;
+        /// <summary>Most buttons (client 4.2.5: a longer list is cut and the dialog says <c>cut</c>).</summary>
+        public const int MaxButtons = 64;
+        /// <summary>A number input's label format, resolved in the client's language.</summary>
+        public const int MaxLabelFormat = 64;
 
         /// <summary>Longest value (a command template, an address, an input's text) in UTF-16 code units: never cut.</summary>
         public const int MaxValue = ConsoleLooks.MaxValueLength;
 
         /// <summary>Most bytes of a dialog's JSON; a larger dialog is reported closed.</summary>
-        public const int MaxDialogBytes = 8192;
+        public const int MaxDialogBytes = 16384;
 
         /// <summary>Most characters of a press (<c>\dialog act</c>'s JSON).</summary>
         public const int MaxActLength = 4096;
@@ -116,9 +126,11 @@ namespace MinecraftClient.ChatBots
         internal static string? Describe(DialogInstance instance)
         {
             DialogDefinition dialog = instance.Definition;
-            if (!dialog.IsResolved || dialog.Inputs.Count > MaxInputs || dialog.Actions.Count > MaxButtons
-                || dialog.Body.Count > MaxBodyParts)
+            if (!dialog.IsResolved || dialog.Inputs.Count > MaxInputs)
                 return null;
+            // Client 4.2.5: a longer list of buttons or body parts is cut, never dropped: the card shows what fits and
+            // says so. Inputs are never cut (a command needs every one).
+            bool cut = dialog.Actions.Count > MaxButtons || dialog.Body.Count > MaxBodyParts;
 
             List<Action<Utf8JsonWriter>> inputs = [];
             HashSet<string> keys = new(StringComparer.Ordinal);
@@ -130,7 +142,7 @@ namespace MinecraftClient.ChatBots
             }
 
             List<Action<Utf8JsonWriter>> buttons = [];
-            foreach (DialogButton button in dialog.Actions)
+            foreach (DialogButton button in dialog.Actions.Take(MaxButtons))
             {
                 if (DescribeButton(button) is not { } write)
                     return null;
@@ -138,10 +150,23 @@ namespace MinecraftClient.ChatBots
             }
 
             (string title, List<(int Length, string Code)>? titleSpans) = Styled(dialog.Title, MaxTitle, 1, MaxTitleSpans);
-            List<(string Text, List<(int Length, string Code)>? Spans)> body = dialog.Body
-                .Select(part => Styled(part.Text, MaxBodyText, MaxBodyLines, MaxBodySpans))
-                .Where(part => part.Text.Length > 0)
+            // An item part (client 4.2.5) carries its stack as the live inventory and the hovers do, and its own
+            // description as its text (none: no text).
+            List<(string Text, List<(int Length, string Code)>? Spans, string? Item, DialogBody Part)> body = dialog.Body
+                .Take(MaxBodyParts)
+                .Select(part =>
+                {
+                    string? item = part.Kind == DialogBodyKind.Item && part.Item is { } stack ? ItemOf(ConsoleLooks.ItemJson(stack)) : null;
+                    string shown = part.Kind == DialogBodyKind.Item ? part.Description ?? string.Empty : part.Text;
+                    (string text, List<(int Length, string Code)>? spans) = Styled(shown, MaxBodyText, MaxBodyLines, MaxBodySpans);
+                    return (text, spans, item, part);
+                })
+                .Where(part => part.text.Length > 0 || part.item is not null)
                 .ToList();
+            (string Label, List<(int Length, string Code)>? Spans)? exit =
+                dialog.ExitButton is { } exitButton && CanCancel(dialog)
+                    ? Styled(exitButton.Label, MaxLabel, 1, MaxLabelSpans)
+                    : null;
 
             string json = Json(writer =>
             {
@@ -153,7 +178,7 @@ namespace MinecraftClient.ChatBots
                 }
 
                 writer.WriteStartArray("body");
-                foreach ((string text, List<(int Length, string Code)>? spans) in body)
+                foreach ((string text, List<(int Length, string Code)>? spans, string? item, DialogBody part) in body)
                 {
                     writer.WriteStartObject();
                     writer.WriteString("text", text);
@@ -161,6 +186,16 @@ namespace MinecraftClient.ChatBots
                     {
                         writer.WritePropertyName("st");
                         AgentBridgeText.WriteSpans(writer, spans);
+                    }
+
+                    if (item is not null)
+                    {
+                        writer.WritePropertyName("item");
+                        writer.WriteRawValue(item, skipInputValidation: true);
+                        if (!part.ShowTooltip)
+                            writer.WriteBoolean("noTip", true);
+                        if (!part.ShowDecorations)
+                            writer.WriteBoolean("noDeco", true);
                     }
 
                     writer.WriteEndObject();
@@ -178,6 +213,25 @@ namespace MinecraftClient.ChatBots
                 writer.WriteBoolean("cancel", CanCancel(dialog));
                 writer.WriteBoolean("play", instance.Phase == DialogPhase.Play);
                 writer.WriteNumber("cols", Math.Clamp(dialog.Columns, 1, 4));
+                // Client 4.2.5: what the game does after a press (close is the default), the exit button's own
+                // label, and that the lists were cut.
+                if (dialog.AfterAction != DialogAfterAction.Close)
+                    writer.WriteString("after", dialog.AfterAction == DialogAfterAction.None ? "none" : "wait");
+                if (exit is { } exitLabel)
+                {
+                    writer.WriteStartObject("exit");
+                    writer.WriteString("label", exitLabel.Label);
+                    if (exitLabel.Spans is not null)
+                    {
+                        writer.WritePropertyName("labelSt");
+                        AgentBridgeText.WriteSpans(writer, exitLabel.Spans);
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                if (cut)
+                    writer.WriteBoolean("cut", true);
             });
             return Encoding.UTF8.GetByteCount(json) <= MaxDialogBytes ? json : null;
         }
@@ -212,6 +266,9 @@ namespace MinecraftClient.ChatBots
                 return null;
 
             (string label, List<(int Length, string Code)>? spans) = Styled(button.Label, MaxLabel, 1, MaxLabelSpans);
+            (string Text, List<(int Length, string Code)>? Spans)? tooltip = button.Tooltip is { } tip
+                ? Styled(tip, MaxTooltip, MaxTooltipLines, MaxTooltipSpans)
+                : null;
             return writer =>
             {
                 writer.WriteStartObject();
@@ -226,6 +283,19 @@ namespace MinecraftClient.ChatBots
                 writer.WriteString("a", kind);
                 if (value is not null)
                     writer.WriteString("v", value);
+                // Client 4.2.5: the button's tooltip and width, as the game draws them.
+                if (tooltip is { Text.Length: > 0 } shownTip)
+                {
+                    writer.WriteString("tip", shownTip.Text);
+                    if (shownTip.Spans is not null)
+                    {
+                        writer.WritePropertyName("tipSt");
+                        AgentBridgeText.WriteSpans(writer, shownTip.Spans);
+                    }
+                }
+
+                if (button.Width is { } width)
+                    writer.WriteNumber("w", Math.Clamp(width, 1, 1024));
                 writer.WriteEndObject();
             };
         }
@@ -268,7 +338,15 @@ namespace MinecraftClient.ChatBots
                         Head(writer, "text");
                         writer.WriteNumber("max", max);
                         if (input.Multiline)
+                        {
                             writer.WriteBoolean("multiline", true);
+                            // Client 4.2.5: the field's lines and height, as the game sizes it.
+                            if (input.MaxLines is > 0 and var lines)
+                                writer.WriteNumber("lines", Math.Min(lines, 64));
+                            if (input.Height is > 0 and var height)
+                                writer.WriteNumber("height", Math.Min(height, 512));
+                        }
+
                         writer.WriteString("initial", input.InitialValue);
                         writer.WriteEndObject();
                     };
@@ -346,6 +424,9 @@ namespace MinecraftClient.ChatBots
                         if (input.Step is { } stepValue)
                             writer.WriteNumber("step", stepValue);
                         writer.WriteNumber("initial", initial);
+                        // Client 4.2.5: the label's format in the client's language ("%s: %s"), as the game shows it.
+                        if (LabelFormat(input.LabelFormat) is { } fmt)
+                            writer.WriteString("fmt", fmt);
                         writer.WriteEndObject();
                     };
                 }
@@ -353,6 +434,35 @@ namespace MinecraftClient.ChatBots
                 default:
                     return null;
             }
+        }
+
+        /// <summary>The item of a hover item's JSON (<c>{"item":{…}}</c>), as the live inventory writes items.</summary>
+        private static string? ItemOf(string? hover)
+        {
+            if (hover is null)
+                return null;
+            using JsonDocument document = JsonDocument.Parse(hover);
+            return document.RootElement.TryGetProperty("item", out JsonElement inner) ? inner.GetRawText() : null;
+        }
+
+        /// <summary>
+        /// A number input's label format (its translation key, the game's "options.generic_value" when it has none) in
+        /// the client's language: two "%s" (or "%1$s" and "%2$s"), at most <see cref="MaxLabelFormat"/> code units of
+        /// text outside the rule list; null otherwise.
+        /// </summary>
+        internal static string? LabelFormat(string? key)
+        {
+            const string genericValue = "options.generic_value";
+            string format = ChatParser.TranslateString(key ?? genericValue)
+                            ?? (key is null || key == genericValue ? "%s: %s" : key);
+            bool twoPlain = format.Split("%s").Length == 3 && !format.Contains("%1$s") && !format.Contains("%2$s");
+            bool twoNumbered = format.Contains("%1$s") && format.Contains("%2$s")
+                               && format.Split("%1$s").Length == 2 && format.Split("%2$s").Length == 2;
+            return (twoPlain || twoNumbered) && format.Length <= MaxLabelFormat
+                                             && string.Equals(AgentBridgeItems.WellFormed(format), format, StringComparison.Ordinal)
+                                             && ConsoleLooks.Clean(format)
+                ? format
+                : null;
         }
 
         /// <summary>A value a command template may get: at most <see cref="MaxValue"/> code units of well-formed text outside the rule list (empty allowed).</summary>

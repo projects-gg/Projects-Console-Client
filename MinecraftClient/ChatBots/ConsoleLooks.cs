@@ -618,6 +618,9 @@ namespace MinecraftClient.ChatBots
         /// and count only. Shrunk to <see cref="MaxHoverItemBytes"/> as afk-host shrinks items: the looks go, then lore
         /// lines from the end.
         /// </summary>
+        internal static string? ItemJson(Dictionary<string, object> item) => HoverItem(item);
+
+        /// <inheritdoc cref="ItemJson"/>
         private static string? HoverItem(Dictionary<string, object> item)
         {
             if (Id(item.GetValueOrDefault("id")) is not { } id)

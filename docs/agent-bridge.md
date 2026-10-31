@@ -713,6 +713,24 @@ For a host that keeps the classic console: the looks of console lines and the se
 - `dialogs`: everything in "Client 4.2.4: dialog cards" (the `dialog` events, `caps: ["dialog"]` in `connecting`,
   `\dialog act`, `dialogres`), while the console keeps printing the dialog as text as before.
 
+### Client 4.2.5: dialog card details
+
+The `dialog` object gains optional fields (a host or app that does not know them ignores them):
+- Caps: up to 64 buttons and 16 body parts; a longer list is cut (the first ones) and the dialog says `"cut": true`
+  instead of being reported closed. Up to 16 inputs (never cut: a dialog with more is still reported closed). At most
+  16384 bytes.
+- A body part may be an item: `{"text", "st"?, "item": {…}, "noTip"?: true, "noDeco"?: true}`: `item` as the live
+  inventory and the hovers write items (`id`, `count`, `name`, `lore`, …), `text` its own description (empty when it
+  has none), `noTip` / `noDeco` when the game draws no tooltip / no decorations for it.
+- A button may have `"tip"` (its tooltip, `"tipSt"` its looks, at most 256 code units and 8 lines) and `"w"` (its
+  width, 1 to 1024).
+- A text input with `multiline` may have `"lines"` (its line count, ≤ 64) and `"height"` (≤ 512).
+- A range input may have `"fmt"`: its label format in the client's language, with two `%s` (or `%1$s`, `%2$s`), at most
+  64 code units, as the game writes "label: value".
+- `"after"`: `none` or `wait` when a press does not close the dialog (the game's `after_action`; absent: close).
+- `"exit": {"label", "labelSt"?}`: the dialog's own exit button's label, when the card may close it (`cancel` true);
+  pressing it is the `cancel` press.
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and
