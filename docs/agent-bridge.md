@@ -707,9 +707,11 @@ For a host that keeps the classic console: the looks of console lines and the se
 - `looks`: right before a chat line the console prints (the server's chat and system messages, as `Log.Chat` prints
   them), the client writes `<nonce>@@MCC@@{"e":"looks","text":"…","st":[…],"ev":[…]}`: `text` is that line as the host
   reads it (no formatting codes, one line, at most 8192 code units), `st`/`ev` its looks as in "Client 4.2.4: console line
-  looks". It is written only when the printed line is exactly `text` (a timestamp, a signature mark or a cut changes
-  it: then the line goes without looks), and never for a line the console does not print. A host attaches the looks
-  only to the very next console line, only when that line is `text`, and never shows the side line itself.
+  looks". The client's signature mark (`▌` before a system line, a signed or a modified one, as `[Signature]` sets it) is
+  part of the printed line: `text` starts with it and `st` covers it first, one span of its colour. It is written only
+  when the printed line is exactly `text` (a timestamp or a cut changes it: then the line goes without looks), and never
+  for a line the console does not print. A host attaches the looks only to the very next console line, only when that
+  line is `text`, and never shows the side line itself.
 - `dialogs`: everything in "Client 4.2.4: dialog cards" (the `dialog` events, `caps: ["dialog"]` in `connecting`,
   `\dialog act`, `dialogres`), while the console keeps printing the dialog as text as before.
 
