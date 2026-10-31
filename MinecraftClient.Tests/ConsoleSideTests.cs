@@ -166,6 +166,47 @@ public sealed class ConsoleSideTests : IDisposable
     }
 
     [Fact]
+    public void ASystemLineSClicksAndHoversComeWithItsSideLooks()
+    {
+        // As Protocol18 hands a 1.19.3+ system line on: its component kept only for whoever reads it. With the console
+        // kinds off, the side looks do, so the line's click and hover come with them, not its colours alone.
+        ConsoleSide.Looks = true;
+        Dictionary<string, object> component = C(
+            ("text", "Tikla: "), ("color", "gray"),
+            ("extra", new object[]
+            {
+                C(("text", "[spawn]"), ("color", "green"),
+                    ("click_event", C(("action", "run_command"), ("command", "/spawn"))),
+                    ("hover_event", C(("action", "show_text"), ("value", C(("text", "Spawn'a git")))))),
+            }));
+        string rendered = ChatParser.ParseText(component);
+        ChatMessage message = new(rendered, null, false, -1, Guid.Empty, true)
+        {
+            rawContent = ConsoleKinds.Keep(component)
+        };
+        Assert.Same(component, message.rawContent);
+
+        Printed(() =>
+        {
+            using (ConsoleSide.Expect(message, rendered, "§7▌§r"))
+                ConsoleIO.WriteChatLineIfVisible("§7▌§r" + rendered);
+        });
+        JsonObject looks = JsonNode.Parse(Assert.Single(lines)[Prefix.Length..])!.AsObject();
+        Assert.Equal("▌Tikla: [spawn]", (string?)looks["text"]);
+        JsonArray events = looks["ev"]!.AsArray();
+        JsonObject spawn = Assert.Single(events)!.AsObject();
+        Assert.Equal("{\"a\":\"run_command\",\"v\":\"/spawn\"}", spawn["click"]!.ToJsonString());
+        Assert.NotNull(spawn["hover"]);
+        JsonArray spans = looks["st"]!.AsArray();
+        Assert.Equal("[1,\"7\"]", spans[0]!.ToJsonString());
+        Assert.Equal(0, (int)spans[^1]![2]!);
+
+        // Nobody reads it: nothing is kept.
+        ConsoleSide.Looks = false;
+        Assert.Null(ConsoleKinds.Keep(component));
+    }
+
+    [Fact]
     public void ATimestampedOrUnprintedLineGoesWithoutLooks()
     {
         ConsoleSide.Looks = true;
