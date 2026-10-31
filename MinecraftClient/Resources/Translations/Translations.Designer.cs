@@ -7910,6 +7910,18 @@ namespace MinecraftClient {
             get { return ResourceManager.GetString("dialog.input_number_range_invalid", resourceCulture); }
         }
 
+        internal static string dialog_input_text_invalid {
+            get { return ResourceManager.GetString("dialog.input_text_invalid", resourceCulture); }
+        }
+
+        internal static string dialog_input_number_step_invalid {
+            get { return ResourceManager.GetString("dialog.input_number_step_invalid", resourceCulture); }
+        }
+
+        internal static string dialog_waiting {
+            get { return ResourceManager.GetString("dialog.waiting", resourceCulture); }
+        }
+
         internal static string dialog_action_unknown {
             get { return ResourceManager.GetString("dialog.action_unknown", resourceCulture); }
         }

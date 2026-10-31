@@ -3494,6 +3494,21 @@ namespace MinecraftClient
             Dialogs.StoreRegistryDialog(protocolId, resourceId, dialog);
         }
 
+        public void OnDialogRegistryName(int protocolId, string resourceId)
+        {
+            Dialogs.StoreRegistryName(protocolId, resourceId);
+        }
+
+        public void OnDialogTags(IReadOnlyDictionary<string, int[]> tags)
+        {
+            Dialogs.SetTags(tags);
+        }
+
+        public void OnDialogPhase(DialogPhase phase)
+        {
+            Dialogs.SetPhase(phase);
+        }
+
         public void OnDialogShown(DialogDefinition dialog, DialogPhase phase)
         {
             var instance = Dialogs.Show(dialog, phase);

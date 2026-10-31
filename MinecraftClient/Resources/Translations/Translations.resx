@@ -2890,6 +2890,15 @@ see item details.</value>
   <data name="dialog.input_number_range_invalid" xml:space="preserve">
     <value>Input {0} must be between {1} and {2}.</value>
   </data>
+  <data name="dialog.input_text_invalid" xml:space="preserve">
+    <value>Input {0} holds a character the game does not take.</value>
+  </data>
+  <data name="dialog.input_number_step_invalid" xml:space="preserve">
+    <value>Input {0} must be one of its slider's steps.</value>
+  </data>
+  <data name="dialog.waiting" xml:space="preserve">
+    <value>Waiting for the server's response.</value>
+  </data>
   <data name="dialog.action_unknown" xml:space="preserve">
     <value>Unknown dialog action index: {0}</value>
   </data>

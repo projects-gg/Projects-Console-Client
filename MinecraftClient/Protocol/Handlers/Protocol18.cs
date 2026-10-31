@@ -650,6 +650,8 @@ namespace MinecraftClient.Protocol.Handlers
                                             enchantmentIdMap!.Add(i, entryId);
                                         else if (isDialog && nbtData is not null)
                                             handler.OnDialogRegistryData(i, entryId, dialogNbtParser.Parse(nbtData));
+                                        else if (isDialog)
+                                            handler.OnDialogRegistryName(i, entryId);
                                     }
 
                                     if (isDimension)
@@ -728,6 +730,10 @@ namespace MinecraftClient.Protocol.Handlers
 
                             case ConfigurationPacketTypesIn.ClearDialog:
                                 handler.OnDialogCleared();
+                                break;
+
+                            case ConfigurationPacketTypesIn.UpdateTags:
+                                HandleUpdateTags(packetData);
                                 break;
 
                             case ConfigurationPacketTypesIn.ShowDialog:
@@ -3512,6 +3518,10 @@ namespace MinecraftClient.Protocol.Handlers
                     handler.OnDialogCleared();
                     break;
 
+                case PacketTypesIn.Tags:
+                    HandleUpdateTags(packetData);
+                    break;
+
                 case PacketTypesIn.ShowDialog:
                     HandleShowDialog(packetData, DialogPhase.Play);
                     break;
@@ -4352,6 +4362,47 @@ namespace MinecraftClient.Protocol.Handlers
             SendPacket(packetPalette.GetOutgoingIdByTypeConfiguration(packet), packetData, packet.ToString());
         }
 
+        /// <summary>
+        /// Update Tags (configuration and play): every registry's tags, of which only the dialog registry's are kept
+        /// (client 4.2.5: the dialogs of the pause screen and the quick actions key, a dialog list's tag). Dialogs exist
+        /// from 1.21.6; nothing after the dialog registry is read.
+        /// </summary>
+        private void HandleUpdateTags(Queue<byte> packetData)
+        {
+            if (protocolVersion < MC_1_21_6_Version)
+                return;
+
+            var registries = dataTypes.ReadNextVarInt(packetData);
+            for (var r = 0; r < registries; r++)
+            {
+                var registry = dataTypes.ReadNextString(packetData);
+                var isDialog = registry == "minecraft:dialog";
+                Dictionary<string, int[]> dialogTags = new(StringComparer.Ordinal);
+                var tagCount = dataTypes.ReadNextVarInt(packetData);
+                for (var t = 0; t < tagCount; t++)
+                {
+                    var tag = dataTypes.ReadNextString(packetData);
+                    var entryCount = dataTypes.ReadNextVarInt(packetData);
+                    List<int> entries = [];
+                    for (var i = 0; i < entryCount; i++)
+                    {
+                        var entry = dataTypes.ReadNextVarInt(packetData);
+                        if (isDialog && entries.Count < 1024)
+                            entries.Add(entry);
+                    }
+
+                    if (isDialog)
+                        dialogTags[tag] = entries.ToArray();
+                }
+
+                if (isDialog)
+                {
+                    handler.OnDialogTags(dialogTags);
+                    return;
+                }
+            }
+        }
+
         private void HandleShowDialog(Queue<byte> packetData, DialogPhase phase)
         {
             if (phase == DialogPhase.Play)
@@ -4460,6 +4511,8 @@ namespace MinecraftClient.Protocol.Handlers
 
             var previousState = currentState;
             currentState = newState;
+            if (newState is CurrentState.Play or CurrentState.Configuration)
+                handler.OnDialogPhase(newState == CurrentState.Play ? DialogPhase.Play : DialogPhase.Configuration);
 
             if (!log.DebugEnabled)
                 return;

@@ -108,6 +108,21 @@ namespace MinecraftClient.Protocol
         void OnDialogRegistryData(int protocolId, string resourceId, DialogDefinition dialog);
 
         /// <summary>
+        /// Called when the server synchronizes a dialog registry entry without its data (a pack both sides know).
+        /// </summary>
+        void OnDialogRegistryName(int protocolId, string resourceId);
+
+        /// <summary>
+        /// Called when the server sends the dialog registry's tags (each tag's entries by registry protocol ID).
+        /// </summary>
+        void OnDialogTags(IReadOnlyDictionary<string, int[]> tags);
+
+        /// <summary>
+        /// Called when the connection enters the configuration or the play phase.
+        /// </summary>
+        void OnDialogPhase(DialogPhase phase);
+
+        /// <summary>
         /// Called when the server shows a custom dialog.
         /// </summary>
         void OnDialogShown(DialogDefinition dialog, DialogPhase phase);

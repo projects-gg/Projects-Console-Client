@@ -73,13 +73,31 @@ namespace MinecraftClient.ChatBots
         /// </summary>
         public static bool Enabled => ConsoleKinds.Enabled || ConsoleSide.Dialogs;
 
-        /// <summary>Reports <paramref name="dialogs"/>' dialogs as event lines while <see cref="Enabled"/>.</summary>
+        /// <summary>
+        /// Reports <paramref name="dialogs"/>' dialogs as event lines while <see cref="Enabled"/>; client 4.2.5 also
+        /// reports the game's "waiting for response" screen and the menus of its pause screen and quick actions key.
+        /// </summary>
         public static void Attach(DialogManager dialogs)
         {
             if (!Enabled)
                 return;
             dialogs.DialogShown += instance => Write(ShownEvent(instance));
             dialogs.DialogCleared += revision => Write(ClearedEvent(revision));
+            dialogs.DialogWaiting += revision => Write(WaitingEvent(revision));
+            object told = new();
+            string? last = null;
+            dialogs.MenusChanged += () =>
+            {
+                string menus = MenusEvent(dialogs);
+                lock (told)
+                {
+                    if (menus == last)
+                        return;
+                    last = menus;
+                }
+
+                Write(menus);
+            };
         }
 
         internal static void Write(string json) => ConsoleKinds.Output(ConsoleKinds.LinePrefix + json);
@@ -104,6 +122,68 @@ namespace MinecraftClient.ChatBots
             writer.WriteString("e", "dialog");
             writer.WriteNumber("rev", revision);
             writer.WriteBoolean("clear", true);
+        });
+
+        /// <summary>
+        /// Client 4.2.5: the game's "waiting for response" screen in a dialog's place after a press (the dialog's
+        /// <c>after_action</c> is <c>wait_for_response</c>): <c>{"e":"dialog","rev","wait":true}</c>. A new dialog takes
+        /// its place; the player leaves it with a close of its revision (the game sends nothing).
+        /// </summary>
+        internal static string WaitingEvent(int revision) => Json(writer =>
+        {
+            writer.WriteString("e", "dialog");
+            writer.WriteNumber("rev", revision);
+            writer.WriteBoolean("wait", true);
+        });
+
+        /// <summary>
+        /// Client 4.2.5: what the game's pause screen and quick actions key open now, as the game picks them
+        /// (<see cref="DialogManager.Menus"/>): <c>{"e":"menus","pause"?:{"label","labelSt"?},"quick"?:{...}}</c>, each
+        /// labelled as the game labels its button (the dialog's external title, else its title). A menu the card could
+        /// not show is left out; none while configuring.
+        /// </summary>
+        internal static string MenusEvent(DialogManager dialogs)
+        {
+            (DialogDefinition? pause, DialogDefinition? quick) = dialogs.Menus();
+            return Json(writer =>
+            {
+                writer.WriteString("e", "menus");
+                WriteMenu(writer, "pause", pause);
+                WriteMenu(writer, "quick", quick);
+            });
+        }
+
+        private static void WriteMenu(Utf8JsonWriter writer, string name, DialogDefinition? dialog)
+        {
+            if (dialog is null
+                || Describe(new DialogInstance(0, DialogPhase.Play, dialog, new Dictionary<string, string>(), DateTimeOffset.UtcNow)) is null)
+                return;
+            (string label, List<(int Length, string Code)>? spans) = Styled(dialog.DisplayTitle(), MaxLabel, 1, MaxLabelSpans);
+            if (label.Length == 0)
+                return;
+            writer.WriteStartObject(name);
+            writer.WriteString("label", label);
+            if (spans is not null)
+            {
+                writer.WritePropertyName("labelSt");
+                AgentBridgeText.WriteSpans(writer, spans);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        /// <summary>
+        /// Client 4.2.5: the answer to a menu's opening (<c>\dialog act {"open":"pause"|"quick"}</c>):
+        /// <c>{"e":"menures","menu","ok","why"?}</c>; an opened menu's dialog comes as its own event first.
+        /// </summary>
+        internal static string MenuResultEvent(string? menu, string? why) => Json(writer =>
+        {
+            writer.WriteString("e", "menures");
+            if (menu is not null)
+                writer.WriteString("menu", menu);
+            writer.WriteBoolean("ok", why is null);
+            if (why is not null)
+                writer.WriteString("why", why);
         });
 
         /// <summary>The answer to a press: done, or why not (<c>line</c>, <c>stale</c>, <c>button</c>, <c>input</c>, <c>cmd</c>, <c>phase</c>, <c>cancel</c>, <c>failed</c>).</summary>
@@ -260,6 +340,11 @@ namespace MinecraftClient.ChatBots
             };
             if (kind.Length == 0 || (kind == "custom" && string.IsNullOrEmpty(action!.Id)))
                 return null;
+            // Client 4.2.5: a dynamic command's template is filled in as the game fills it (tpl); one the game would
+            // refuse is never shown. A plain command is sent as it is.
+            bool template = action is not null && DialogManager.IsTemplate(action);
+            if (template && DialogValues.ParseTemplate(action!.Value ?? string.Empty) is null)
+                return null;
             // A value follows the console's click rules: never cut, the rule list's characters refused.
             if (kind is "run_command" or "open_url" or "suggest_command" or "copy_to_clipboard"
                 && (value is null || ConsoleLooks.ClickJson(kind, value) is null))
@@ -283,6 +368,9 @@ namespace MinecraftClient.ChatBots
                 writer.WriteString("a", kind);
                 if (value is not null)
                     writer.WriteString("v", value);
+                // Client 4.2.5: a command says whether it is a template (absent: client 4.2.4, which fills in every one).
+                if (kind == "run_command")
+                    writer.WriteBoolean("tpl", template);
                 // Client 4.2.5: the button's tooltip and width, as the game draws them.
                 if (tooltip is { Text.Length: > 0 } shownTip)
                 {
@@ -416,6 +504,9 @@ namespace MinecraftClient.ChatBots
                         || initial < min || initial > max
                         || input.Step is { } step && (!float.IsFinite(step) || step <= 0))
                         return null;
+                    // Client 4.2.5: the value the game's slider shows before it is moved (with a step, the initial value
+                    // its steps count from).
+                    float untouched = DialogValues.UntouchedSlider(input.Start, input.End, input.Step, initial);
                     return writer =>
                     {
                         Head(writer, "range");
@@ -423,7 +514,7 @@ namespace MinecraftClient.ChatBots
                         writer.WriteNumber("end", input.End);
                         if (input.Step is { } stepValue)
                             writer.WriteNumber("step", stepValue);
-                        writer.WriteNumber("initial", initial);
+                        writer.WriteNumber("initial", untouched);
                         // Client 4.2.5: the label's format in the client's language ("%s: %s"), as the game shows it.
                         if (LabelFormat(input.LabelFormat) is { } fmt)
                             writer.WriteString("fmt", fmt);
@@ -610,15 +701,8 @@ namespace MinecraftClient.ChatBots
         /// </summary>
         internal static string Act(DialogManager dialogs, string json)
         {
-            int revision = 0;
-            string? why = Press(dialogs, json, ref revision);
-            return ResultEvent(revision, why);
-        }
-
-        private static string? Press(DialogManager dialogs, string json, ref int revision)
-        {
             if (json.Length > MaxActLength || json.Contains('%'))
-                return "line";
+                return ResultEvent(0, "line");
 
             JsonDocument document;
             try
@@ -627,70 +711,91 @@ namespace MinecraftClient.ChatBots
             }
             catch (JsonException)
             {
-                return "line";
+                return ResultEvent(0, "line");
             }
 
             using (document)
             {
                 JsonElement root = document.RootElement;
-                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("rev", out JsonElement rev)
-                    || rev.ValueKind != JsonValueKind.Number || !rev.TryGetInt32(out revision))
-                    return "line";
-
-                DialogInstance? current = dialogs.Current;
-                if (current is null || current.Revision != revision || Describe(current) is null)
-                    return "stale";
-
-                if (root.TryGetProperty("cancel", out JsonElement cancel) && cancel.ValueKind == JsonValueKind.True)
+                // Client 4.2.5: {"open":"pause"|"quick"} opens what the game's pause screen or quick actions key opens.
+                if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("open", out JsonElement open))
                 {
-                    if (!CanCancel(current.Definition))
-                        return "cancel";
-                    return dialogs.Cancel(revision).Success ? null : "stale";
+                    string? menu = open.ValueKind == JsonValueKind.String ? open.GetString() : null;
+                    if (menu is not ("pause" or "quick"))
+                        return MenuResultEvent(null, "line");
+                    return MenuResultEvent(menu, dialogs.OpenMenu(menu) is null ? "menu" : null);
                 }
 
-                if (!root.TryGetProperty("i", out JsonElement i) || i.ValueKind != JsonValueKind.Number
-                    || !i.TryGetInt32(out int index))
-                    return "line";
-                DialogButton? button = current.Definition.Actions.FirstOrDefault(action => action.Index == index);
-                if (button is null)
-                    return "button";
-
-                if (root.TryGetProperty("inputs", out JsonElement inputs))
-                {
-                    if (inputs.ValueKind != JsonValueKind.Object)
-                        return "line";
-                    int count = 0;
-                    foreach (JsonProperty property in inputs.EnumerateObject())
-                    {
-                        DialogInput? input = current.Definition.Inputs
-                            .FirstOrDefault(candidate => candidate.Key.Equals(property.Name, StringComparison.Ordinal));
-                        if (++count > MaxInputs || input is null || property.Value.ValueKind != JsonValueKind.String
-                            || property.Value.GetString() is not { } value || !InputValueFits(input, value))
-                            return "input";
-                        if (!dialogs.SetInput(revision, input.Key, value).Success)
-                            return dialogs.Current?.Revision == revision ? "input" : "stale";
-                    }
-
-                    current = dialogs.Current;
-                    if (current is null || current.Revision != revision)
-                        return "stale";
-                }
-
-                string? command = root.TryGetProperty("cmd", out JsonElement cmd) && cmd.ValueKind == JsonValueKind.String
-                    ? cmd.GetString()
-                    : null;
-                if (button.Action is { Kind: DialogActionKind.RunCommand } run)
-                {
-                    if (current.Phase != DialogPhase.Play)
-                        return "phase";
-                    string filled = DialogManager.CommandOf(current, run);
-                    if (ConsoleLooks.ClickJson("run_command", filled) is null
-                        || !string.Equals(filled, command, StringComparison.Ordinal))
-                        return "cmd";
-                }
-
-                return dialogs.Press(revision, index, command).Success ? null : "failed";
+                int revision = 0;
+                string? why = Press(dialogs, root, ref revision);
+                return ResultEvent(revision, why);
             }
+        }
+
+        private static string? Press(DialogManager dialogs, JsonElement root, ref int revision)
+        {
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("rev", out JsonElement rev)
+                || rev.ValueKind != JsonValueKind.Number || !rev.TryGetInt32(out revision))
+                return "line";
+
+            bool cancelled = root.TryGetProperty("cancel", out JsonElement cancel) && cancel.ValueKind == JsonValueKind.True;
+            // Client 4.2.5: the waiting screen's "Back" is a close of its revision.
+            if (cancelled && dialogs.Waiting == revision)
+                return dialogs.Cancel(revision).Success ? null : "stale";
+
+            DialogInstance? current = dialogs.Current;
+            if (current is null || current.Revision != revision || Describe(current) is null)
+                return "stale";
+
+            if (cancelled)
+            {
+                if (!CanCancel(current.Definition))
+                    return "cancel";
+                return dialogs.Cancel(revision).Success ? null : "stale";
+            }
+
+            if (!root.TryGetProperty("i", out JsonElement i) || i.ValueKind != JsonValueKind.Number
+                || !i.TryGetInt32(out int index))
+                return "line";
+            DialogButton? button = current.Definition.Actions.FirstOrDefault(action => action.Index == index);
+            if (button is null)
+                return "button";
+
+            if (root.TryGetProperty("inputs", out JsonElement inputs))
+            {
+                if (inputs.ValueKind != JsonValueKind.Object)
+                    return "line";
+                int count = 0;
+                foreach (JsonProperty property in inputs.EnumerateObject())
+                {
+                    DialogInput? input = current.Definition.Inputs
+                        .FirstOrDefault(candidate => candidate.Key.Equals(property.Name, StringComparison.Ordinal));
+                    if (++count > MaxInputs || input is null || property.Value.ValueKind != JsonValueKind.String
+                        || property.Value.GetString() is not { } value || !InputValueFits(input, value))
+                        return "input";
+                    if (!dialogs.SetInput(revision, input.Key, value).Success)
+                        return dialogs.Current?.Revision == revision ? "input" : "stale";
+                }
+
+                current = dialogs.Current;
+                if (current is null || current.Revision != revision)
+                    return "stale";
+            }
+
+            string? command = root.TryGetProperty("cmd", out JsonElement cmd) && cmd.ValueKind == JsonValueKind.String
+                ? cmd.GetString()
+                : null;
+            if (button.Action is { Kind: DialogActionKind.RunCommand } run)
+            {
+                if (current.Phase != DialogPhase.Play)
+                    return "phase";
+                string? filled = DialogManager.CommandOf(current, run);
+                if (filled is null || ConsoleLooks.ClickJson("run_command", filled) is null
+                    || !string.Equals(filled, command, StringComparison.Ordinal))
+                    return "cmd";
+            }
+
+            return dialogs.Press(revision, index, command).Success ? null : "failed";
         }
 
         private static string Json(Action<Utf8JsonWriter> body)
