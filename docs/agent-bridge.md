@@ -708,7 +708,8 @@ For a host that keeps the classic console: the looks of console lines and the se
   them), the client writes `<nonce>@@MCC@@{"e":"looks","text":"…","st":[…],"ev":[…]}`: `text` is that line as the host
   reads it (no formatting codes, one line, at most 8192 code units), `st`/`ev` its looks as in "Client 4.2.4: console line
   looks". The client's signature mark (`▌` before a system line, a signed or a modified one, as `[Signature]` sets it) is
-  part of the printed line: `text` starts with it and `st` covers it first, one span of its colour. It is written only
+  part of the printed line: `text` starts with it and `st` covers it first, one span of its colour (a line without
+  looks of its own then has two spans: the mark's, and the rest without a look). It is written only
   when the printed line is exactly `text` (a timestamp or a cut changes it: then the line goes without looks), and never
   for a line the console does not print. A host attaches the looks only to the very next console line, only when that
   line is `text`, and never shows the side line itself.
@@ -725,7 +726,9 @@ The `dialog` object gains optional fields (a host or app that does not know them
   inventory and the hovers write items (`id`, `count`, `name`, `lore`, …), `text` its own description (empty when it
   has none), `noTip` / `noDeco` when the game draws no tooltip / no decorations for it.
 - A button may have `"tip"` (its tooltip, `"tipSt"` its looks, at most 256 code units and 8 lines) and `"w"` (its
-  width, 1 to 1024).
+  width, 1 to 1024; left out at the game's default 150, which the game's packet leaves out too). A button list's
+  `cols` is the game's two when the dialog leaves `columns` out (multi_action, dialog_list, server_links); a notice
+  has one, a confirmation two.
 - A text input with `multiline` may have `"lines"` (its line count, ≤ 64) and `"height"` (≤ 512).
 - A range input may have `"fmt"`: its label format in the client's language, with two `%s` (or `%1$s`, `%2$s`), at most
   64 code units, as the game writes "label: value".

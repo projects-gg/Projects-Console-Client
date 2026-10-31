@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using MinecraftClient.Protocol.Message;
 
@@ -64,6 +65,10 @@ namespace MinecraftClient.ChatBots
             try
             {
                 looks = ConsoleLooks.OfChat(message, messageText, text);
+                // A plain line (no colour, click or hover of its own) has no looks; with the client's signature
+                // mark in front it has two: the mark's colour, then none.
+                if (looks is null && mark.Length > 0)
+                    looks = new ConsoleLooks.Result("[[" + text.Length.ToString(CultureInfo.InvariantCulture) + ",\"\"]]", null);
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {

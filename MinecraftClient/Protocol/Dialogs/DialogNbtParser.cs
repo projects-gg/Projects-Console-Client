@@ -16,7 +16,15 @@ public sealed class DialogNbtParser
         var actions = new List<DialogButton>();
         DialogActionDefinition? cancelAction = null;
         DialogButton? exitButton = null;
-        var columns = GetInt(nbt, "columns", 1);
+        // The game's codec leaves a field at its default out of the packet: a button list (multi_action,
+        // dialog_list, server_links) without columns has the game's two. A notice draws its one button, a
+        // confirmation its two side by side.
+        var columns = type switch
+        {
+            "minecraft:notice" => 1,
+            "minecraft:confirmation" => 2,
+            _ => GetInt(nbt, "columns", 2),
+        };
         var buttonWidth = GetInt(nbt, "button_width", 150);
 
         switch (type)

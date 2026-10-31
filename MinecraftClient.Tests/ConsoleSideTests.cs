@@ -207,6 +207,39 @@ public sealed class ConsoleSideTests : IDisposable
     }
 
     [Fact]
+    public void APlainMarkedLineHasTheMarkSLookThenNone()
+    {
+        // tellraw @a "Duz bir satir": no colour of its own, so without a mark it has no looks; printed after the
+        // client's signature mark it has two, the mark's grey and then none.
+        ConsoleSide.Looks = true;
+        Dictionary<string, object> component = C(("text", "Duz bir satir"));
+        string rendered = ChatParser.ParseText(component);
+        ChatMessage message = new(rendered, null, false, -1, Guid.Empty, true)
+        {
+            rawContent = ConsoleKinds.Keep(component)
+        };
+
+        Printed(() =>
+        {
+            using (ConsoleSide.Expect(message, rendered, "§7▌§r"))
+                ConsoleIO.WriteChatLineIfVisible("§7▌§r" + rendered);
+        });
+        JsonObject looks = JsonNode.Parse(Assert.Single(lines)[Prefix.Length..])!.AsObject();
+        Assert.Equal("▌Duz bir satir", (string?)looks["text"]);
+        Assert.Equal("[[1,\"7\"],[13,\"\"]]", looks["st"]!.ToJsonString());
+        Assert.Null(looks["ev"]);
+        lines.Clear();
+
+        // Without the mark it stays a line without looks.
+        Printed(() =>
+        {
+            using (ConsoleSide.Expect(message, rendered))
+                ConsoleIO.WriteChatLineIfVisible(rendered);
+        });
+        Assert.Empty(lines);
+    }
+
+    [Fact]
     public void ATimestampedOrUnprintedLineGoesWithoutLooks()
     {
         ConsoleSide.Looks = true;
