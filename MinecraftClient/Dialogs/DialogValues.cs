@@ -262,8 +262,10 @@ public static class DialogValues
     /// </summary>
     public static string? FillTemplate(string template, IReadOnlyDictionary<string, string> values)
     {
-        if (ParseTemplate(template) is not var (segments, variables))
+        var parsed = ParseTemplate(template);
+        if (parsed is null)
             return null;
+        (List<string> segments, List<string> variables) = parsed.Value;
         StringBuilder filled = new();
         for (int i = 0; i < variables.Count; i++)
         {

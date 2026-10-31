@@ -720,7 +720,7 @@ namespace MinecraftClient.ChatBots
                 // Client 4.2.5: {"open":"pause"|"quick"} opens what the game's pause screen or quick actions key opens.
                 if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("open", out JsonElement open))
                 {
-                    string? menu = open.ValueKind == JsonValueKind.String ? open.GetString() : null;
+                    string menu = open.ValueKind == JsonValueKind.String ? open.GetString() ?? string.Empty : string.Empty;
                     if (menu is not ("pause" or "quick"))
                         return MenuResultEvent(null, "line");
                     return MenuResultEvent(menu, dialogs.OpenMenu(menu) is null ? "menu" : null);

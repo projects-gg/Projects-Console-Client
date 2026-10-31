@@ -652,7 +652,7 @@ public sealed class DialogManager
     internal static DialogDefinition? BuiltIn(string name)
     {
         DialogButton back = new(0, Translate("gui.back", "Back"), null, Width: 200);
-        DialogDefinition List(string title, string external, string tag) => new(
+        DialogDefinition ListOf(string title, string external, string tag) => new(
             "minecraft:dialog_list",
             Translate(title + ".title", external.TrimEnd('.')),
             Translate(title, external),
@@ -682,8 +682,8 @@ public sealed class DialogManager
                 Columns: 1,
                 ButtonWidth: 310,
                 ExitButton: back),
-            "minecraft:custom_options" => List("menu.custom_options", "Custom Options...", PauseTag),
-            "minecraft:quick_actions" => List("menu.quick_actions", "Quick Actions...", QuickTag),
+            "minecraft:custom_options" => ListOf("menu.custom_options", "Custom Options...", PauseTag),
+            "minecraft:quick_actions" => ListOf("menu.quick_actions", "Quick Actions...", QuickTag),
             _ => null,
         };
     }
