@@ -651,11 +651,11 @@ public sealed class DialogManager
     /// </summary>
     internal static DialogDefinition? BuiltIn(string name)
     {
-        DialogButton back = new(0, Translate("gui.back", "Back"), null, Width: 200);
-        DialogDefinition ListOf(string title, string external, string tag) => new(
+        DialogButton back = new(0, GameWords("gui.back"), null, Width: 200);
+        DialogDefinition ListOf(string key, string tag) => new(
             "minecraft:dialog_list",
-            Translate(title + ".title", external.TrimEnd('.')),
-            Translate(title, external),
+            GameWords(key + ".title"),
+            GameWords(key),
             CanCloseWithEscape: true,
             Pause: true,
             DialogAfterAction.Close,
@@ -670,8 +670,8 @@ public sealed class DialogManager
         {
             "minecraft:server_links" => new DialogDefinition(
                 "minecraft:server_links",
-                Translate("menu.server_links.title", "Server Links"),
-                Translate("menu.server_links", "Server Links..."),
+                GameWords("menu.server_links.title"),
+                GameWords("menu.server_links"),
                 CanCloseWithEscape: true,
                 Pause: true,
                 DialogAfterAction.Close,
@@ -682,14 +682,34 @@ public sealed class DialogManager
                 Columns: 1,
                 ButtonWidth: 310,
                 ExitButton: back),
-            "minecraft:custom_options" => ListOf("menu.custom_options", "Custom Options...", PauseTag),
-            "minecraft:quick_actions" => ListOf("menu.quick_actions", "Quick Actions...", QuickTag),
+            "minecraft:custom_options" => ListOf("menu.custom_options", PauseTag),
+            "minecraft:quick_actions" => ListOf("menu.quick_actions", QuickTag),
             _ => null,
         };
     }
 
-    private static string Translate(string key, string fallback) =>
-        ChatParser.TranslateString(key) is { Length: > 0 } text && text != key ? text : fallback;
+    /// <summary>
+    /// The game's own words for its own dialogs (26.x's en_us and tr_tr), for a language file older than
+    /// 1.21.6 (afk-host's is 1.19.3's): Turkish for a Turkish game language, else English.
+    /// </summary>
+    private static readonly Dictionary<string, (string En, string Tr)> OwnWords = new(StringComparer.Ordinal)
+    {
+        ["menu.custom_options"] = ("Custom Options...", "\u00D6zel Ayarlar..."),
+        ["menu.custom_options.title"] = ("Custom Options", "\u00D6zel Ayarlar"),
+        ["menu.quick_actions"] = ("Quick Actions...", "H\u0131zl\u0131 Eylemler\u2026"),
+        ["menu.quick_actions.title"] = ("Quick Actions", "H\u0131zl\u0131 Eylemler"),
+        ["menu.server_links"] = ("Server Links...", "Sunucu Adresleri..."),
+        ["menu.server_links.title"] = ("Server Links", "Sunucu Adresleri"),
+        ["gui.back"] = ("Back", "Geri"),
+    };
+
+    private static string GameWords(string key)
+    {
+        if (ChatParser.TranslateString(key) is { Length: > 0 } text && text != key)
+            return text;
+        (string en, string tr) = OwnWords[key];
+        return Settings.Config.Main.Advanced.Language.StartsWith("tr", StringComparison.OrdinalIgnoreCase) ? tr : en;
+    }
 
     private static DialogActionValues BuildActionValues(DialogInstance instance)
     {
