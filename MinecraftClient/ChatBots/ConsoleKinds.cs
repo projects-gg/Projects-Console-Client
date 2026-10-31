@@ -133,10 +133,11 @@ namespace MinecraftClient.ChatBots
         }
 
         /// <summary>
-        /// <paramref name="raw"/> (a text component as the server sent it) while the console kinds are on, for the line's
-        /// looks; null otherwise, so nothing is kept that nobody reads.
+        /// <paramref name="raw"/> (a text component as the server sent it) while the console kinds or the side looks
+        /// (client 4.2.5) are on, for the line's looks with its clicks and hovers; null otherwise, so nothing is kept that
+        /// nobody reads.
         /// </summary>
-        internal static object? Keep(object? raw) => Enabled ? raw : null;
+        internal static object? Keep(object? raw) => Enabled || ConsoleSide.Looks ? raw : null;
 
         /// <summary>A line's looks; none when working them out fails (the line itself is written all the same).</summary>
         private static ConsoleLooks.Result? Looks(Func<ConsoleLooks.Result?> looks)
@@ -253,6 +254,26 @@ namespace MinecraftClient.ChatBots
                 if (looks is null)
                     return;
                 // Client 4.2.4: the line's looks (docs/agent-bridge.md, "Client 4.2.4: console line looks").
+                writer.WritePropertyName("st");
+                writer.WriteRawValue(looks.Spans, skipInputValidation: true);
+                if (looks.Events is not null)
+                {
+                    writer.WritePropertyName("ev");
+                    writer.WriteRawValue(looks.Events, skipInputValidation: true);
+                }
+            });
+        }
+
+        /// <summary>
+        /// A side event (client 4.2.5, <see cref="ConsoleSide"/>): the looks of the classic console line that follows,
+        /// whose text is <paramref name="text"/>.
+        /// </summary>
+        internal static string LooksEvent(string text, ConsoleLooks.Result looks)
+        {
+            return Json(writer =>
+            {
+                writer.WriteString("e", "looks");
+                writer.WriteString("text", text);
                 writer.WritePropertyName("st");
                 writer.WriteRawValue(looks.Spans, skipInputValidation: true);
                 if (looks.Events is not null)

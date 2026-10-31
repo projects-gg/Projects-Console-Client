@@ -411,6 +411,8 @@ namespace MinecraftClient.Protocol
                     case "1.21.11":
                         return 774;
                     case "26.1":
+                    case "26.1.1":
+                    case "26.1.2":
                         return 775;
                     case "26.2":
                         return 776;

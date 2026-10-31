@@ -2848,6 +2848,15 @@ bir yuvanın üzerine gelin.</value>
   <data name="dialog.input_number_range_invalid" xml:space="preserve">
     <value>{0} girdisi {1} ile {2} arasında olmalıdır.</value>
   </data>
+  <data name="dialog.input_text_invalid" xml:space="preserve">
+    <value>{0} girdisinde oyunun almadığı bir karakter var.</value>
+  </data>
+  <data name="dialog.input_number_step_invalid" xml:space="preserve">
+    <value>{0} girdisi kaydırıcının adımlarından biri olmalıdır.</value>
+  </data>
+  <data name="dialog.waiting" xml:space="preserve">
+    <value>Sunucunun cevabı bekleniyor.</value>
+  </data>
   <data name="dialog.action_unknown" xml:space="preserve">
     <value>Bilinmeyen iletişim kutusu eylem dizini: {0}</value>
   </data>

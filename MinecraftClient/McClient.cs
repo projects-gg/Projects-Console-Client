@@ -3494,6 +3494,21 @@ namespace MinecraftClient
             Dialogs.StoreRegistryDialog(protocolId, resourceId, dialog);
         }
 
+        public void OnDialogRegistryName(int protocolId, string resourceId)
+        {
+            Dialogs.StoreRegistryName(protocolId, resourceId);
+        }
+
+        public void OnDialogTags(IReadOnlyDictionary<string, int[]> tags)
+        {
+            Dialogs.SetTags(tags);
+        }
+
+        public void OnDialogPhase(DialogPhase phase)
+        {
+            Dialogs.SetPhase(phase);
+        }
+
         public void OnDialogShown(DialogDefinition dialog, DialogPhase phase)
         {
             var instance = Dialogs.Show(dialog, phase);
@@ -3967,7 +3982,11 @@ namespace MinecraftClient
             if (ChatBots.ConsoleKinds.Enabled)
                 ChatBots.ConsoleKinds.WriteChat(message, messageText, ListedPlayerName); // where it came from, unmarked
             else
-                Log.Chat(color + messageText);
+            {
+                // Side events: the line's looks go right before its print (the print itself is unchanged).
+                using (ChatBots.ConsoleSide.Expect(message, messageText, color))
+                    Log.Chat(color + messageText);
+            }
 
             if (Config.Main.Advanced.ShowChatLinks)
                 foreach (string link in links)

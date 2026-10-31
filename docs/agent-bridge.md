@@ -696,6 +696,93 @@ The host presses with an internal command on stdin (the host's own line: a playe
   `input`, `cmd`, `phase` (a command while configuring), `cancel` (the card may not close it), `failed`. Nothing is
   printed to the console.
 
+## Client 4.2.5: side events
+
+For a host that keeps the classic console: the looks of console lines and the server's dialogs without console kinds.
+
+- On with `MCC_CONSOLE_SIDE`, a comma-separated list of `looks` and/or `dialogs` (unknown parts ignored), together with
+  the launcher bridge and a valid nonce (as console kinds). While `MCC_CONSOLE_KINDS=1` is on, console kinds carry both
+  and the side events stay off.
+- The console prints exactly what it prints without them: every console line, its order and its bytes stay as they are.
+- `looks`: right before a chat line the console prints (the server's chat and system messages, as `Log.Chat` prints
+  them), the client writes `<nonce>@@MCC@@{"e":"looks","text":"…","st":[…],"ev":[…]}`: `text` is that line as the host
+  reads it (no formatting codes, one line, at most 8192 code units), `st`/`ev` its looks as in "Client 4.2.4: console line
+  looks". The client's signature mark (`▌` before a system line, a signed or a modified one, as `[Signature]` sets it) is
+  part of the printed line: `text` starts with it and `st` covers it first, one span of its colour (a line without
+  looks of its own then has two spans: the mark's, and the rest without a look). It is written only
+  when the printed line is exactly `text` (a timestamp or a cut changes it: then the line goes without looks), and never
+  for a line the console does not print. A host attaches the looks only to the very next console line, only when that
+  line is `text`, and never shows the side line itself.
+- `dialogs`: everything in "Client 4.2.4: dialog cards" (the `dialog` events, `caps: ["dialog"]` in `connecting`,
+  `\dialog act`, `dialogres`), while the console keeps printing the dialog as text as before.
+
+### Client 4.2.5: dialog card details
+
+The `dialog` object gains optional fields (a host or app that does not know them ignores them):
+- Caps: up to 64 buttons and 16 body parts; a longer list is cut (the first ones) and the dialog says `"cut": true`
+  instead of being reported closed. Up to 16 inputs (never cut: a dialog with more is still reported closed). At most
+  16384 bytes.
+- A body part may be an item: `{"text", "st"?, "item": {…}, "noTip"?: true, "noDeco"?: true}`: `item` as the live
+  inventory and the hovers write items (`id`, `count`, `name`, `lore`, …), `text` its own description (empty when it
+  has none), `noTip` / `noDeco` when the game draws no tooltip / no decorations for it.
+- A button may have `"tip"` (its tooltip, `"tipSt"` its looks, at most 256 code units and 8 lines) and `"w"` (its
+  width, 1 to 1024; left out at the game's default 150, which the game's packet leaves out too). A button list's
+  `cols` is the game's two when the dialog leaves `columns` out (multi_action, dialog_list, server_links); a notice
+  has one, a confirmation two.
+- A text input with `multiline` may have `"lines"` (its line count, ≤ 64) and `"height"` (≤ 512).
+- A range input may have `"fmt"`: its label format in the client's language, with two `%s` (or `%1$s`, `%2$s`), at most
+  64 code units, as the game writes "label: value".
+- `"after"`: `none` or `wait` when a press does not close the dialog (the game's `after_action`; absent: close).
+- `"exit": {"label", "labelSt"?}`: the dialog's own exit button's label, when the card may close it (`cancel` true);
+  pressing it is the `cancel` press.
+
+### Client 4.2.5: what the game sends, its waiting screen and its menus
+
+What a press sends is what Minecraft's own client sends for the same press:
+- A `run_command` button says `"tpl": true` for a `minecraft:dynamic/run_command`: `v` is its template, filled in as the
+  game fills it (`StringTemplate`): each `$(name)` once, left to right, never inside a value; a name without an input
+  is filled in with nothing; `$` without `(` is text. A template the game would refuse (no variable, `$(` without `)`,
+  a name of other characters than letters, digits and `_`) is never shown. `"tpl": false` (`minecraft:run_command`):
+  `v` is sent as it is. A filled-in command starting without `/` gets one. Without `tpl` (client 4.2.4) every command
+  is a template filled in as 4.2.4 fills it (each input's `$(key)` replaced in turn, a text's `\` and `"` escaped, a
+  number as passed).
+- Values in a template: a text escaped as the game's `StringTag.escapeWithoutQuotes` (`"`, `'` and `\` with a
+  backslash, `\b \t \n \f \r`, other control characters as `\xHH`); a `bool` its `onTrue` / `onFalse`; an `option` its
+  id; a `range` a whole number as an integer, else as Java's `Float.toString` (`2.5`, `1.0E-4`).
+- A `range` with a `step` takes only `initial + n × step` inside the range (the game counts its steps from the initial
+  value, in floats); without one any value of the range. Its `initial` is the value the game's slider shows before it is
+  moved (without a step, the initial value through the slider's own float sums). A press passes a range's value as the
+  shortest plain decimal that reads back as the same float (no exponent).
+- A text takes no section sign, control character or DEL (a line break only when `multiline`), as the game's field.
+- `minecraft:custom` sends its payload as it is; `minecraft:dynamic/custom` its additions with every input's value
+  over them (a text as a string, a `bool` as a byte, a `range` as a float).
+- After a press the game closes the dialog (`after` absent), keeps it (`none`: the card stays as it is, values too) or
+  shows its "waiting for response" screen (`wait`): `{"e":"dialog","rev","wait":true}`, the next revision. The server's
+  clear does not end it, a new dialog does; the player leaves it (the game's "Back", enabled after 5 seconds) with
+  `\dialog act {"rev","cancel":true}` on its revision, which sends nothing and is answered as a close, then
+  `{"e":"dialog","rev","clear":true}`. A button that opens a dialog opens it whatever `after` says.
+- A dialog list (`minecraft:dialog_list`) shows one button a dialog (a tag's in the server's order), labelled with the
+  dialog's external title (else its title) and as wide as the list's `button_width`; server links one button a link.
+  A dialog the client does not know reports the list closed. The game's own dialogs `minecraft:server_links`,
+  `minecraft:custom_options` and `minecraft:quick_actions` (sent without data by a server that knows the client has
+  them) are the game's.
+
+Menus: what the game's pause screen and its quick actions key open, as the game picks them (the dialog tags
+`minecraft:pause_screen_additions` and `minecraft:quick_actions`; one dialog opens itself, more open the game's list of
+them; an empty pause tag offers the server links when there are any):
+
+```text
+<nonce>@@MCC@@{"e":"menus","pause":{"label":"Kurallar","labelSt":[[8,"6"]]},"quick":{"label":"Quick Actions..."}}
+\dialog act {"open":"quick"}
+<nonce>@@MCC@@{"e":"dialog","rev":7,"dialog":{…}}
+<nonce>@@MCC@@{"e":"menures","menu":"quick","ok":true}
+```
+
+- `menus` comes whenever they change (the server's tags or links, the play phase): `pause` and `quick` each when there
+  is one the card can show, labelled as the game labels its button (cut like a `label`); none while configuring.
+- `\dialog act {"open":"pause"|"quick"}` opens it in play as the game does (a dialog event first), answered by
+  `menures`: `ok`, or `why` `menu` (none now) or `line`.
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and

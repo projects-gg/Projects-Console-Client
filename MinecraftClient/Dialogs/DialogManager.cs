@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
+using MinecraftClient.Protocol.Message;
 
 namespace MinecraftClient.Dialogs;
 
@@ -18,12 +19,21 @@ internal interface IDialogClient
 
 public sealed class DialogManager
 {
+    /// <summary>The dialog tag whose dialogs the game's pause screen offers.</summary>
+    public const string PauseTag = "minecraft:pause_screen_additions";
+
+    /// <summary>The dialog tag whose dialogs the game's quick actions key opens.</summary>
+    public const string QuickTag = "minecraft:quick_actions";
+
     private readonly IDialogClient _client;
     private readonly Lock _lock = new();
     private readonly Dictionary<int, DialogDefinition> _registryById = new();
     private readonly Dictionary<string, DialogDefinition> _registryByName = new(StringComparer.Ordinal);
     private readonly List<DialogServerLink> _serverLinks = [];
+    private Dictionary<string, int[]> _tags = new(StringComparer.Ordinal);
+    private DialogPhase _phase = DialogPhase.Configuration;
     private DialogInstance? _current;
+    private int? _waiting;
     private int _revision;
 
     public DialogManager(McClient client)
@@ -49,12 +59,31 @@ public sealed class DialogManager
     public event Action<DialogInstance>? DialogShown;
     public event Action<int>? DialogCleared;
 
+    /// <summary>
+    /// After a press on a dialog whose <c>after_action</c> is <c>wait_for_response</c>, the game shows its "waiting for
+    /// response" screen in the dialog's place: this revision is that screen (client 4.2.5).
+    /// </summary>
+    public event Action<int>? DialogWaiting;
+
+    /// <summary>What the pause screen and the quick actions key open may have changed (client 4.2.5).</summary>
+    public event Action? MenusChanged;
+
     public DialogInstance? Current
     {
         get
         {
             lock (_lock)
                 return _current;
+        }
+    }
+
+    /// <summary>The revision of the "waiting for response" screen shown now, if any.</summary>
+    public int? Waiting
+    {
+        get
+        {
+            lock (_lock)
+                return _waiting;
         }
     }
 
@@ -65,6 +94,18 @@ public sealed class DialogManager
             _registryById[protocolId] = definition;
             _registryByName[resourceId] = definition;
         }
+    }
+
+    /// <summary>
+    /// A registry entry the server sent without its data (a pack both sides know: the game's own). The game's own
+    /// dialogs (<c>minecraft:server_links</c>, <c>custom_options</c>, <c>quick_actions</c>) are known here as the game
+    /// defines them.
+    /// </summary>
+    public void StoreRegistryName(int protocolId, string resourceId)
+    {
+        if (BuiltIn(resourceId) is not { } definition)
+            return;
+        StoreRegistryDialog(protocolId, resourceId, definition);
     }
 
     public void ClearRegistry()
@@ -83,6 +124,29 @@ public sealed class DialogManager
             _serverLinks.Clear();
             _serverLinks.AddRange(links);
         }
+
+        MenusChanged?.Invoke();
+    }
+
+    /// <summary>The dialog registry's tags (client 4.2.5): each tag's entries, by registry id, in the server's order.</summary>
+    public void SetTags(IReadOnlyDictionary<string, int[]> tags)
+    {
+        lock (_lock)
+            _tags = new Dictionary<string, int[]>(tags, StringComparer.Ordinal);
+        MenusChanged?.Invoke();
+    }
+
+    /// <summary>The connection's phase: the pause screen and the quick actions key exist only in play.</summary>
+    public void SetPhase(DialogPhase phase)
+    {
+        lock (_lock)
+        {
+            if (_phase == phase)
+                return;
+            _phase = phase;
+        }
+
+        MenusChanged?.Invoke();
     }
 
     public DialogInstance Show(DialogDefinition definition, DialogPhase phase)
@@ -90,10 +154,11 @@ public sealed class DialogManager
         DialogInstance instance;
         lock (_lock)
         {
-            var expanded = ExpandServerLinks(definition);
-            var values = expanded.Inputs.ToDictionary(static input => input.Key, static input => input.InitialValue, StringComparer.Ordinal);
+            var expanded = ExpandDialogList(ExpandServerLinks(definition));
+            var values = expanded.Inputs.ToDictionary(static input => input.Key, InitialValue, StringComparer.Ordinal);
             instance = new DialogInstance(++_revision, phase, expanded, values, DateTimeOffset.UtcNow);
             _current = instance;
+            _waiting = null;
         }
 
         _client.Info("§e" + string.Format(Translations.dialog_received, instance.Definition.DisplayTitle()));
@@ -126,11 +191,66 @@ public sealed class DialogManager
         return Show(unresolved, phase);
     }
 
+    /// <summary>
+    /// The dialogs the game opens from its pause screen and with its quick actions key (client 4.2.5), as the game
+    /// picks them: one dialog of the tag opens itself, more open the game's own list of them, and the pause screen
+    /// offers the server's links when the tag is empty. None while configuring.
+    /// </summary>
+    public (DialogDefinition? Pause, DialogDefinition? Quick) Menus()
+    {
+        lock (_lock)
+        {
+            if (_phase != DialogPhase.Play)
+                return (null, null);
+            DialogDefinition? pause = Menu(PauseTag, "minecraft:custom_options")
+                                      ?? (_serverLinks.Count > 0 ? Named("minecraft:server_links") : null);
+            DialogDefinition? quick = Menu(QuickTag, "minecraft:quick_actions");
+            return (pause is null ? null : ExpandDialogList(ExpandServerLinks(pause)),
+                quick is null ? null : ExpandDialogList(ExpandServerLinks(quick)));
+        }
+    }
+
+    /// <summary>Opens what the pause screen (<c>pause</c>) or the quick actions key (<c>quick</c>) opens, in play only.</summary>
+    public DialogInstance? OpenMenu(string menu)
+    {
+        DialogDefinition? definition;
+        lock (_lock)
+        {
+            if (_phase != DialogPhase.Play)
+                return null;
+            definition = menu switch
+            {
+                "pause" => Menu(PauseTag, "minecraft:custom_options")
+                           ?? (_serverLinks.Count > 0 ? Named("minecraft:server_links") : null),
+                "quick" => Menu(QuickTag, "minecraft:quick_actions"),
+                _ => null,
+            };
+        }
+
+        return definition is null ? null : Show(definition, DialogPhase.Play);
+    }
+
+    /// <summary>A tag's one dialog, or the game's list dialog when it has more; the caller holds the lock.</summary>
+    private DialogDefinition? Menu(string tag, string list)
+    {
+        if (!_tags.TryGetValue(tag, out int[]? entries) || entries.Length == 0)
+            return null;
+        if (entries.Length > 1)
+            return Named(list);
+        return _registryById.TryGetValue(entries[0], out DialogDefinition? dialog) ? dialog : null;
+    }
+
+    private DialogDefinition? Named(string name) =>
+        _registryByName.TryGetValue(name, out DialogDefinition? dialog) ? dialog : null;
+
     public void Clear()
     {
         int revision;
         lock (_lock)
         {
+            // The game's clear closes a dialog, never its "waiting for response" screen.
+            if (_current is null && _waiting is not null)
+                return;
             revision = _current?.Revision ?? _revision;
             _current = null;
         }
@@ -144,11 +264,21 @@ public sealed class DialogManager
         int revision;
         lock (_lock)
         {
-            if (_current is null)
+            if (_current is not null)
+            {
+                revision = _current.Revision;
+                _current = null;
+            }
+            else if (_waiting is { } waiting)
+            {
+                // The waiting screen's "Back".
+                revision = waiting;
+                _waiting = null;
+            }
+            else
+            {
                 return new DialogActionResult(false, Translations.dialog_none);
-
-            revision = _current.Revision;
-            _current = null;
+            }
         }
 
         DialogCleared?.Invoke(revision);
@@ -207,30 +337,52 @@ public sealed class DialogManager
             && !string.Equals(CommandOf(instance, run), command, StringComparison.Ordinal))
             return new DialogActionResult(false, Translations.dialog_action_invalid);
 
-        return Execute(instance, button.Action, ShouldCloseAfterAction(instance.Definition.AfterAction));
+        return Execute(instance, button.Action, instance.Definition.AfterAction);
     }
 
-    /// <summary>Cancels the dialog of <paramref name="revision"/> only.</summary>
+    /// <summary>Cancels the dialog of <paramref name="revision"/> only, or leaves the waiting screen of that revision.</summary>
     internal DialogActionResult Cancel(int revision)
     {
+        bool leftWaiting = false;
         lock (_lock)
         {
-            if (_current is null || _current.Revision != revision)
+            if (_current is null && _waiting == revision)
+            {
+                // The waiting screen's "Back": the game sends nothing.
+                _waiting = null;
+                leftWaiting = true;
+            }
+            else if (_current is null || _current.Revision != revision)
+            {
                 return new DialogActionResult(false, Translations.dialog_none);
+            }
         }
 
-        return Cancel();
+        if (!leftWaiting)
+            return Cancel();
+        DialogCleared?.Invoke(revision);
+        return new DialogActionResult(true, Translations.dialog_dismissed);
     }
 
     /// <summary>
-    /// The command a command button sends: its template filled in from the inputs, starting with "/" (the game runs a
-    /// dialog's command with or without one; without it the client would send it as chat).
+    /// The command a command button sends, starting with "/" (the game runs a dialog's command with or without one;
+    /// without it the client would send it as chat): a <c>minecraft:run_command</c> as it is, a
+    /// <c>minecraft:dynamic/run_command</c> filled in from the inputs as the game fills it. Null when the game would
+    /// refuse the template.
     /// </summary>
-    internal static string CommandOf(DialogInstance instance, DialogActionDefinition action)
+    internal static string? CommandOf(DialogInstance instance, DialogActionDefinition action)
     {
-        var command = ApplyTemplate(action.Value ?? string.Empty, BuildActionValues(instance).TemplateValues);
+        string? command = IsTemplate(action)
+            ? DialogValues.FillTemplate(action.Value ?? string.Empty, BuildActionValues(instance).TemplateValues)
+            : action.Value ?? string.Empty;
+        if (command is null)
+            return null;
         return command.StartsWith('/') ? command : "/" + command;
     }
+
+    /// <summary>Whether a command button's command is a template the inputs fill in (<c>minecraft:dynamic/run_command</c>).</summary>
+    internal static bool IsTemplate(DialogActionDefinition action) =>
+        action.Kind == DialogActionKind.RunCommand && action.Type == "minecraft:dynamic/run_command";
 
     /// <summary>Sets an input of the open dialog; the caller holds the lock and has checked there is one.</summary>
     private DialogActionResult SetCurrentInput(string key, string value)
@@ -266,7 +418,7 @@ public sealed class DialogManager
         if (button is null)
             return new DialogActionResult(false, string.Format(Translations.dialog_action_unknown, index));
 
-        return Execute(instance, button.Action, ShouldCloseAfterAction(instance.Definition.AfterAction));
+        return Execute(instance, button.Action, instance.Definition.AfterAction);
     }
 
     public DialogActionResult ClickLabel(string label)
@@ -288,7 +440,7 @@ public sealed class DialogManager
         {
             0 => new DialogActionResult(false, string.Format(Translations.dialog_action_label_unknown, label)),
             > 1 => new DialogActionResult(false, string.Format(Translations.dialog_action_label_ambiguous, label)),
-            _ => Execute(instance, matches[0].Action, ShouldCloseAfterAction(instance.Definition.AfterAction))
+            _ => Execute(instance, matches[0].Action, instance.Definition.AfterAction)
         };
     }
 
@@ -304,50 +456,54 @@ public sealed class DialogManager
         if (!instance.Definition.CanCloseWithEscape && instance.Definition.CancelAction is null)
             return new DialogActionResult(false, Translations.dialog_cannot_cancel);
 
-        return Execute(instance, instance.Definition.CancelAction, closeWhenDone: true);
+        // The game closes a dialog with its exit action and then always closes it.
+        return Execute(instance, instance.Definition.CancelAction, DialogAfterAction.Close);
     }
 
-    private DialogActionResult Execute(DialogInstance instance, DialogActionDefinition? action, bool closeWhenDone)
+    /// <summary>
+    /// Does <paramref name="action"/> of <paramref name="instance"/> as the game does, then what the game does after
+    /// it: close the dialog, keep it, or show its "waiting for response" screen. A dialog the action opens takes the
+    /// place of both.
+    /// </summary>
+    private DialogActionResult Execute(DialogInstance instance, DialogActionDefinition? action, DialogAfterAction after)
     {
         if (!instance.Definition.IsResolved)
             return new DialogActionResult(false, Translations.dialog_unresolved_action_disabled);
 
-        if (action is null || action.Kind == DialogActionKind.None)
+        DialogActionResult result;
+        switch (action?.Kind ?? DialogActionKind.None)
         {
-            if (closeWhenDone)
-                _ = Dismiss();
-            return new DialogActionResult(true, Translations.dialog_action_closed);
-        }
+            case DialogActionKind.None:
+                result = new DialogActionResult(true, Translations.dialog_action_closed);
+                break;
 
-        var values = BuildActionValues(instance);
-        switch (action.Kind)
-        {
             case DialogActionKind.RunCommand:
                 if (instance.Phase != DialogPhase.Play)
                     return new DialogActionResult(false, Translations.dialog_action_command_not_in_play);
 
-                var command = CommandOf(instance, action);
+                if (CommandOf(instance, action!) is not { } command)
+                    return new DialogActionResult(false, Translations.dialog_action_invalid);
                 _client.SendText(command);
-                if (closeWhenDone)
-                    _ = Dismiss();
-                return new DialogActionResult(true, string.Format(Translations.dialog_action_command_sent, command));
+                result = new DialogActionResult(true, string.Format(Translations.dialog_action_command_sent, command));
+                break;
 
             case DialogActionKind.CustomClick:
-                if (action.Id is null)
+                if (action!.Id is null)
                     return new DialogActionResult(false, Translations.dialog_action_invalid);
 
-                var payload = action.Type == "minecraft:custom" && action.Payload is null && values.TagValues.Count == 0
-                    ? null
-                    : MergePayload(action.Payload, values.TagValues);
+                // minecraft:custom sends its payload as it is; minecraft:dynamic/custom its additions with every
+                // input's value (an input's value over an addition of the same name), always as a compound.
+                var payload = action.Type == "minecraft:custom"
+                    ? action.Payload
+                    : MergePayload(action.Payload, BuildActionValues(instance).TagValues);
                 if (!_client.SendCustomClickAction(action.Id, payload))
                     return new DialogActionResult(false, Translations.dialog_action_custom_failed);
 
-                if (closeWhenDone)
-                    _ = Dismiss();
-                return new DialogActionResult(true, string.Format(Translations.dialog_action_custom_sent, action.Id));
+                result = new DialogActionResult(true, string.Format(Translations.dialog_action_custom_sent, action.Id));
+                break;
 
             case DialogActionKind.ShowDialog:
-                if (action.NestedDialog is not null)
+                if (action!.NestedDialog is not null)
                 {
                     Show(action.NestedDialog, instance.Phase);
                     return new DialogActionResult(true, Translations.dialog_action_nested_opened);
@@ -363,7 +519,7 @@ public sealed class DialogManager
                 {
                     DialogDefinition? referencedDialog;
                     lock (_lock)
-                        _registryByName.TryGetValue(action.Value, out referencedDialog);
+                        _registryByName.TryGetValue(Identifier(action.Value), out referencedDialog);
 
                     if (referencedDialog is not null)
                     {
@@ -375,22 +531,55 @@ public sealed class DialogManager
                 return new DialogActionResult(false, Translations.dialog_action_invalid);
 
             case DialogActionKind.OpenUrl:
-                return new DialogActionResult(true, string.Format(Translations.dialog_action_open_url, action.Value ?? string.Empty));
+                result = new DialogActionResult(true, string.Format(Translations.dialog_action_open_url, action!.Value ?? string.Empty));
+                break;
 
             case DialogActionKind.SuggestCommand:
-                return new DialogActionResult(true, string.Format(Translations.dialog_action_suggest_command, action.Value ?? string.Empty));
+                result = new DialogActionResult(true, string.Format(Translations.dialog_action_suggest_command, action!.Value ?? string.Empty));
+                break;
 
             case DialogActionKind.CopyToClipboard:
-                return new DialogActionResult(true, string.Format(Translations.dialog_action_copy, action.Value ?? string.Empty));
+                result = new DialogActionResult(true, string.Format(Translations.dialog_action_copy, action!.Value ?? string.Empty));
+                break;
 
             default:
-                return new DialogActionResult(false, string.Format(Translations.dialog_action_unsupported, action.Type ?? action.Kind.ToString()));
+                return new DialogActionResult(false, string.Format(Translations.dialog_action_unsupported, action!.Type ?? action.Kind.ToString()));
         }
+
+        After(instance.Revision, after);
+        return result;
     }
 
-    private static bool ShouldCloseAfterAction(DialogAfterAction afterAction)
+    /// <summary>What the game does after a press on the dialog of <paramref name="revision"/>, if it is still open.</summary>
+    private void After(int revision, DialogAfterAction after)
     {
-        return afterAction == DialogAfterAction.Close;
+        if (after == DialogAfterAction.None)
+            return;
+        int waiting;
+        lock (_lock)
+        {
+            if (_current?.Revision != revision)
+                return;
+            _current = null;
+            if (after == DialogAfterAction.Close)
+            {
+                waiting = -1;
+            }
+            else
+            {
+                waiting = ++_revision;
+                _waiting = waiting;
+            }
+        }
+
+        if (waiting < 0)
+        {
+            DialogCleared?.Invoke(revision);
+            return;
+        }
+
+        _client.Info(Translations.dialog_waiting);
+        DialogWaiting?.Invoke(waiting);
     }
 
     private DialogDefinition ExpandServerLinks(DialogDefinition definition)
@@ -398,17 +587,128 @@ public sealed class DialogManager
         if (!definition.Type.Equals("minecraft:server_links", StringComparison.Ordinal))
             return definition;
 
+        // The game's server links dialog: one button a link, as wide as the dialog says, then nothing else.
         var linkActions = _serverLinks
             .Select((link, index) => new DialogButton(
                 index + 1,
                 link.Label,
-                new DialogActionDefinition(DialogActionKind.OpenUrl, Value: link.Url)))
+                new DialogActionDefinition(DialogActionKind.OpenUrl, Value: link.Url, Type: "minecraft:open_url"),
+                Width: definition.ButtonWidth))
             .ToList();
 
-        if (definition.Actions.Count > 0)
-            linkActions.AddRange(definition.Actions.Select((button, i) => button with { Index = linkActions.Count + i + 1 }));
-
         return definition with { Actions = linkActions };
+    }
+
+    /// <summary>
+    /// A dialog list as the game shows it: one button a dialog (a tag's in the server's order), labelled with the
+    /// dialog's external title (else its title) and as wide as the list says. A dialog the client does not know stays
+    /// unresolved (the card does not show the list).
+    /// </summary>
+    private DialogDefinition ExpandDialogList(DialogDefinition definition)
+    {
+        if (!definition.Type.Equals("minecraft:dialog_list", StringComparison.Ordinal))
+            return definition;
+
+        List<DialogButton> buttons = [];
+        foreach (DialogButton button in definition.Actions)
+        {
+            DialogActionDefinition? action = button.Action;
+            if (action is { Type: "dialog_tag" })
+            {
+                string tag = Identifier(button.Label.TrimStart('#'));
+                foreach (int id in _tags.GetValueOrDefault(tag) ?? [])
+                {
+                    buttons.Add(_registryById.TryGetValue(id, out DialogDefinition? listed)
+                        ? new DialogButton(0, listed.DisplayTitle(),
+                            new DialogActionDefinition(DialogActionKind.ShowDialog, DialogReferenceId: id, Type: "minecraft:show_dialog"),
+                            Width: definition.ButtonWidth)
+                        : new DialogButton(0, button.Label, new DialogActionDefinition(DialogActionKind.Unknown, Type: "dialog_reference_id")));
+                }
+
+                continue;
+            }
+
+            if (action is { Type: "dialog_reference_name", Value: { } name })
+            {
+                buttons.Add(_registryByName.TryGetValue(Identifier(name), out DialogDefinition? named)
+                    ? button with { Label = named.DisplayTitle(), Width = definition.ButtonWidth }
+                    : button with { Action = new DialogActionDefinition(DialogActionKind.Unknown, Type: "dialog_reference_name") });
+                continue;
+            }
+
+            buttons.Add(button with { Width = button.Width ?? definition.ButtonWidth });
+        }
+
+        return definition with { Actions = buttons.Select((button, i) => button with { Index = i + 1 }).ToList() };
+    }
+
+    /// <summary>A resource name with its namespace (<c>minecraft:</c> when it has none).</summary>
+    private static string Identifier(string name) => name.Contains(':') ? name : "minecraft:" + name;
+
+    /// <summary>
+    /// The game's own dialogs (its <c>Dialogs</c> bootstrap), for a server that sends their registry entries without
+    /// data: its links, its "custom options" list of the pause screen's dialogs, its quick actions list.
+    /// </summary>
+    internal static DialogDefinition? BuiltIn(string name)
+    {
+        DialogButton back = new(0, GameWords("gui.back"), null, Width: 200);
+        DialogDefinition ListOf(string key, string tag) => new(
+            "minecraft:dialog_list",
+            GameWords(key + ".title"),
+            GameWords(key),
+            CanCloseWithEscape: true,
+            Pause: true,
+            DialogAfterAction.Close,
+            [],
+            [],
+            [new DialogButton(1, "#" + tag, new DialogActionDefinition(DialogActionKind.Unknown, Type: "dialog_tag"))],
+            null,
+            Columns: 1,
+            ButtonWidth: 310,
+            ExitButton: back);
+        return name switch
+        {
+            "minecraft:server_links" => new DialogDefinition(
+                "minecraft:server_links",
+                GameWords("menu.server_links.title"),
+                GameWords("menu.server_links"),
+                CanCloseWithEscape: true,
+                Pause: true,
+                DialogAfterAction.Close,
+                [],
+                [],
+                [],
+                null,
+                Columns: 1,
+                ButtonWidth: 310,
+                ExitButton: back),
+            "minecraft:custom_options" => ListOf("menu.custom_options", PauseTag),
+            "minecraft:quick_actions" => ListOf("menu.quick_actions", QuickTag),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// The game's own words for its own dialogs (26.x's en_us and tr_tr), for a language file older than
+    /// 1.21.6 (afk-host's is 1.19.3's): Turkish for a Turkish game language, else English.
+    /// </summary>
+    private static readonly Dictionary<string, (string En, string Tr)> OwnWords = new(StringComparer.Ordinal)
+    {
+        ["menu.custom_options"] = ("Custom Options...", "\u00D6zel Ayarlar..."),
+        ["menu.custom_options.title"] = ("Custom Options", "\u00D6zel Ayarlar"),
+        ["menu.quick_actions"] = ("Quick Actions...", "H\u0131zl\u0131 Eylemler\u2026"),
+        ["menu.quick_actions.title"] = ("Quick Actions", "H\u0131zl\u0131 Eylemler"),
+        ["menu.server_links"] = ("Server Links...", "Sunucu Adresleri..."),
+        ["menu.server_links.title"] = ("Server Links", "Sunucu Adresleri"),
+        ["gui.back"] = ("Back", "Geri"),
+    };
+
+    private static string GameWords(string key)
+    {
+        if (ChatParser.TranslateString(key) is { Length: > 0 } text && text != key)
+            return text;
+        (string en, string tr) = OwnWords[key];
+        return Settings.Config.Main.Advanced.Language.StartsWith("tr", StringComparison.OrdinalIgnoreCase) ? tr : en;
     }
 
     private static DialogActionValues BuildActionValues(DialogInstance instance)
@@ -419,7 +719,7 @@ public sealed class DialogManager
         foreach (var input in instance.Definition.Inputs)
         {
             instance.Values.TryGetValue(input.Key, out var value);
-            value ??= input.InitialValue;
+            value ??= InitialValue(input);
             templateValues[input.Key] = ToTemplateValue(input, value);
             tagValues[input.Key] = ToNbtValue(input, value);
         }
@@ -439,6 +739,18 @@ public sealed class DialogManager
         return payload;
     }
 
+    /// <summary>
+    /// An input's value before the player changes it: a slider's is the value the game's slider shows at its initial
+    /// place (without a step, the initial value through the slider's own float sums).
+    /// </summary>
+    internal static string InitialValue(DialogInput input)
+    {
+        if (input.Kind != DialogInputKind.NumberRange)
+            return input.InitialValue;
+        float initial = input.InitialNumber ?? (input.Start + input.End) / 2F;
+        return NumberToString(DialogValues.UntouchedSlider(input.Start, input.End, input.Step, initial));
+    }
+
     private static string NormalizeInputValue(DialogInput input, string value, out string? error)
     {
         error = null;
@@ -450,6 +762,15 @@ public sealed class DialogManager
                     error = string.Format(Translations.dialog_input_too_long, input.Key, input.MaxLength);
                     return input.InitialValue;
                 }
+
+                // The game's text fields take no section sign, control character or DEL; a line break only when
+                // multiline.
+                if (!value.All(c => DialogValues.AllowedInText(c, input.Multiline)))
+                {
+                    error = string.Format(Translations.dialog_input_text_invalid, input.Key);
+                    return input.InitialValue;
+                }
+
                 return value;
 
             case DialogInputKind.Boolean:
@@ -473,18 +794,26 @@ public sealed class DialogManager
                 return input.InitialValue;
 
             case DialogInputKind.NumberRange:
-                if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+                if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) || !float.IsFinite(number))
                 {
                     error = string.Format(Translations.dialog_input_number_invalid, input.Key);
-                    return input.InitialValue;
+                    return InitialValue(input);
                 }
 
                 var min = Math.Min(input.Start, input.End);
                 var max = Math.Max(input.Start, input.End);
-                if (number < min || number > max)
+                float initial = input.InitialNumber ?? (input.Start + input.End) / 2F;
+                if (!DialogValues.SliderTakes(number, input.Start, input.End, null, initial))
                 {
                     error = string.Format(CultureInfo.InvariantCulture, Translations.dialog_input_number_range_invalid, input.Key, min, max);
-                    return input.InitialValue;
+                    return InitialValue(input);
+                }
+
+                // A slider with a step takes only its steps, counted from its initial value as the game counts them.
+                if (!DialogValues.SliderTakes(number, input.Start, input.End, input.Step, initial))
+                {
+                    error = string.Format(Translations.dialog_input_number_step_invalid, input.Key);
+                    return InitialValue(input);
                 }
 
                 return NumberToString(number);
@@ -494,12 +823,19 @@ public sealed class DialogManager
         }
     }
 
+    /// <summary>
+    /// What a command template gets for an input's value, as the game writes it: a text escaped
+    /// (<see cref="DialogValues.EscapeText"/>), a switch's <c>on_true</c> or <c>on_false</c>, a slider's number in
+    /// Java's text (<see cref="DialogValues.SliderText"/>), an option's id.
+    /// </summary>
     private static string ToTemplateValue(DialogInput input, string value)
     {
         return input.Kind switch
         {
             DialogInputKind.Boolean => value.Equals("true", StringComparison.OrdinalIgnoreCase) ? input.OnTrue : input.OnFalse,
-            DialogInputKind.Text => EscapeStringTagWithoutQuotes(value),
+            DialogInputKind.Text => DialogValues.EscapeText(value),
+            DialogInputKind.NumberRange when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                => DialogValues.SliderText(number),
             _ => value
         };
     }
@@ -514,26 +850,14 @@ public sealed class DialogManager
         };
     }
 
-    private static string ApplyTemplate(string template, IReadOnlyDictionary<string, string> values)
-    {
-        var result = template;
-        foreach (var (key, value) in values)
-            result = result.Replace("$(" + key + ")", value, StringComparison.Ordinal);
-
-        return result;
-    }
-
-    private static string EscapeStringTagWithoutQuotes(string value)
-    {
-        return value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
-    }
-
-    private static string NumberToString(float value)
+    /// <summary>
+    /// A number as an input's value is kept and passed: a whole number as an integer, else the shortest decimal that
+    /// reads back as the same float (no exponent).
+    /// </summary>
+    internal static string NumberToString(float value)
     {
         var integer = (int)value;
-        return integer == value
-            ? integer.ToString(CultureInfo.InvariantCulture)
-            : value.ToString(CultureInfo.InvariantCulture);
+        return integer == value ? integer.ToString(CultureInfo.InvariantCulture) : DialogValues.Plain(value);
     }
 
     private sealed record DialogActionValues(

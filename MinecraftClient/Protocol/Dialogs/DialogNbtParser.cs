@@ -15,7 +15,16 @@ public sealed class DialogNbtParser
         var common = ParseCommon(nbt, type);
         var actions = new List<DialogButton>();
         DialogActionDefinition? cancelAction = null;
-        var columns = GetInt(nbt, "columns", 1);
+        DialogButton? exitButton = null;
+        // The game's codec leaves a field at its default out of the packet: a button list (multi_action,
+        // dialog_list, server_links) without columns has the game's two. A notice draws its one button, a
+        // confirmation its two side by side.
+        var columns = type switch
+        {
+            "minecraft:notice" => 1,
+            "minecraft:confirmation" => 2,
+            _ => GetInt(nbt, "columns", 2),
+        };
         var buttonWidth = GetInt(nbt, "button_width", 150);
 
         switch (type)
@@ -34,16 +43,19 @@ public sealed class DialogNbtParser
 
             case "minecraft:multi_action":
                 actions.AddRange(ParseButtonList(GetValue(nbt, "actions")));
-                cancelAction = ParseButton(nbt, "exit_action", 0)?.Action;
+                exitButton = ParseButton(nbt, "exit_action", 0);
+                cancelAction = exitButton?.Action;
                 break;
 
             case "minecraft:dialog_list":
                 actions.AddRange(ParseDialogListActions(GetValue(nbt, "dialogs")));
-                cancelAction = ParseButton(nbt, "exit_action", 0)?.Action;
+                exitButton = ParseButton(nbt, "exit_action", 0);
+                cancelAction = exitButton?.Action;
                 break;
 
             case "minecraft:server_links":
-                cancelAction = ParseButton(nbt, "exit_action", 0)?.Action;
+                exitButton = ParseButton(nbt, "exit_action", 0);
+                cancelAction = exitButton?.Action;
                 break;
         }
 
@@ -59,7 +71,8 @@ public sealed class DialogNbtParser
             actions,
             cancelAction,
             columns,
-            buttonWidth);
+            buttonWidth,
+            ExitButton: exitButton);
     }
 
     public DialogDefinition? TryParse(Dictionary<string, object>? nbt)
@@ -98,7 +111,15 @@ public sealed class DialogNbtParser
                     var description = compound.TryGetValue("description", out var desc)
                         ? ParsePlainMessage(desc)
                         : string.Empty;
-                    body.Add(new DialogBody(DialogBodyKind.Item, string.IsNullOrWhiteSpace(description) ? Translations.dialog_item_body : description, type));
+                    bool described = !string.IsNullOrWhiteSpace(description);
+                    body.Add(new DialogBody(
+                        DialogBodyKind.Item,
+                        described ? description : Translations.dialog_item_body,
+                        type,
+                        Item: GetCompound(compound, "item"),
+                        Description: described ? description : null,
+                        ShowDecorations: GetBool(compound, "show_decorations", true),
+                        ShowTooltip: GetBool(compound, "show_tooltip", true)));
                     continue;
                 }
 
@@ -155,6 +176,7 @@ public sealed class DialogNbtParser
 
     private static DialogInput ParseTextInput(string key, string type, Dictionary<string, object> control)
     {
+        Dictionary<string, object>? multiline = GetCompound(control, "multiline");
         return new DialogInput(
             key,
             DialogInputKind.Text,
@@ -163,7 +185,10 @@ public sealed class DialogNbtParser
             MaxLength: GetInt(control, "max_length", 32),
             LabelVisible: GetBool(control, "label_visible", true),
             Multiline: control.ContainsKey("multiline"),
-            Type: type);
+            Type: type,
+            MaxLines: multiline is not null && multiline.ContainsKey("max_lines") ? GetInt(multiline, "max_lines", 0) : null,
+            Height: multiline is not null && multiline.ContainsKey("height") ? GetInt(multiline, "height", 0) : null,
+            Width: control.ContainsKey("width") ? GetInt(control, "width", 200) : null);
     }
 
     private static DialogInput ParseBooleanInput(string key, string type, Dictionary<string, object> control)
@@ -212,7 +237,9 @@ public sealed class DialogNbtParser
             End: end,
             InitialNumber: initial,
             Step: TryGetFloat(range, "step"),
-            Type: type);
+            Type: type,
+            LabelFormat: GetString(control, "label_format"),
+            Width: control.ContainsKey("width") ? GetInt(control, "width", 200) : null);
     }
 
     private static IReadOnlyList<DialogOption> ParseOptions(object? value)
@@ -297,7 +324,9 @@ public sealed class DialogNbtParser
         var action = data.TryGetValue("action", out var actionValue) && actionValue is Dictionary<string, object> actionData
             ? ParseAction(actionData)
             : null;
-        return new DialogButton(index, label, action);
+        string? tooltip = data.TryGetValue("tooltip", out var tooltipValue) ? ParseComponent(tooltipValue) : null;
+        int? width = data.ContainsKey("width") ? GetInt(data, "width", 150) : null;
+        return new DialogButton(index, label, action, Tooltip: string.IsNullOrWhiteSpace(tooltip) ? null : tooltip, Width: width);
     }
 
     private static DialogActionDefinition ParseAction(Dictionary<string, object> action)

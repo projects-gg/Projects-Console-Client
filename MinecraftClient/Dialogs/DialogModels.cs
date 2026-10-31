@@ -44,7 +44,19 @@ public enum DialogActionKind
     Unknown
 }
 
-public sealed record DialogBody(DialogBodyKind Kind, string Text, string? Type = null);
+/// <summary>
+/// One body part. An item part (client 4.2.5) also keeps its stack as the server sent it (<paramref name="Item"/>),
+/// its own description (<paramref name="Description"/>, null when it has none: then <paramref name="Text"/> is the
+/// console's placeholder) and whether the game draws its decorations and tooltip.
+/// </summary>
+public sealed record DialogBody(
+    DialogBodyKind Kind,
+    string Text,
+    string? Type = null,
+    Dictionary<string, object>? Item = null,
+    string? Description = null,
+    bool ShowDecorations = true,
+    bool ShowTooltip = true);
 
 public sealed record DialogOption(string Id, string Display, bool Initial)
 {
@@ -69,7 +81,11 @@ public sealed record DialogInput(
     float End = 1,
     float? InitialNumber = null,
     float? Step = null,
-    string? Type = null);
+    string? Type = null,
+    int? MaxLines = null,
+    int? Height = null,
+    string? LabelFormat = null,
+    int? Width = null);
 
 public sealed record DialogActionDefinition(
     DialogActionKind Kind,
@@ -80,7 +96,13 @@ public sealed record DialogActionDefinition(
     int? DialogReferenceId = null,
     string? Type = null);
 
-public sealed record DialogButton(int Index, string Label, DialogActionDefinition? Action, bool IsCancel = false);
+public sealed record DialogButton(
+    int Index,
+    string Label,
+    DialogActionDefinition? Action,
+    bool IsCancel = false,
+    string? Tooltip = null,
+    int? Width = null);
 
 public sealed record DialogServerLink(string Label, string Url);
 
@@ -98,7 +120,8 @@ public sealed record DialogDefinition(
     int Columns = 1,
     int ButtonWidth = 150,
     bool IsResolved = true,
-    string? UnresolvedReference = null);
+    string? UnresolvedReference = null,
+    DialogButton? ExitButton = null);
 
 public sealed record DialogInstance(
     int Revision,
