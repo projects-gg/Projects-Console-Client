@@ -3984,7 +3984,7 @@ namespace MinecraftClient
             else
             {
                 // Side events: the line's looks go right before its print (the print itself is unchanged).
-                using (ChatBots.ConsoleSide.Expect(message, messageText))
+                using (ChatBots.ConsoleSide.Expect(message, messageText, color))
                     Log.Chat(color + messageText);
             }
 

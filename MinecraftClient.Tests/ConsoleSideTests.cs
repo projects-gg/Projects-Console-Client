@@ -138,12 +138,40 @@ public sealed class ConsoleSideTests : IDisposable
     }
 
     [Fact]
-    public void AMarkedTimestampedOrUnprintedLineGoesWithoutLooks()
+    public void TheClientSMarkIsPartOfTheLineItsLooksDescribe()
     {
         ConsoleSide.Looks = true;
         (ChatMessage message, string rendered) = ColouredLine();
 
-        // A signature mark changes the printed line: no looks.
+        // The client's signature mark is printed with the line (a system line's, grey): the looks cover it, first.
+        string printed = Printed(() =>
+        {
+            using (ConsoleSide.Expect(message, rendered, "§7▌§r"))
+                ConsoleIO.WriteChatLineIfVisible("§7▌§r" + rendered);
+        });
+        string line = Assert.Single(lines);
+        JsonObject looks = JsonNode.Parse(line[Prefix.Length..])!.AsObject();
+        Assert.Equal("▌[Duyuru] Etkinlik başlıyor", (string?)looks["text"]);
+        Assert.Equal(printed.TrimEnd('\r', '\n'), (string?)looks["text"]);
+        Assert.StartsWith("[[1,\"7\"],", looks["st"]!.ToJsonString());
+        lines.Clear();
+
+        // A mark the line does not carry: no looks.
+        Printed(() =>
+        {
+            using (ConsoleSide.Expect(message, rendered, "§7▌§r"))
+                ConsoleIO.WriteChatLineIfVisible(rendered);
+        });
+        Assert.Empty(lines);
+    }
+
+    [Fact]
+    public void ATimestampedOrUnprintedLineGoesWithoutLooks()
+    {
+        ConsoleSide.Looks = true;
+        (ChatMessage message, string rendered) = ColouredLine();
+
+        // A signature mark the looks were not told of changes the printed line: no looks.
         Printed(() =>
         {
             using (ConsoleSide.Expect(message, rendered))

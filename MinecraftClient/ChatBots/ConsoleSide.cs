@@ -48,11 +48,12 @@ namespace MinecraftClient.ChatBots
         }
 
         /// <summary>
-        /// The chat line about to be logged on this thread (<paramref name="messageText"/>, as the client renders it):
-        /// its looks wait for the console's print of that line. Nothing while console kinds are on, the looks are off
-        /// or the line has none.
+        /// The chat line about to be logged on this thread (<paramref name="messageText"/>, as the client renders it,
+        /// after the client's signature <paramref name="mark"/>, <c>§7▌§r</c> for a system line and the like): its looks
+        /// wait for the console's print of that line. The mark is part of the printed line, so the looks cover it too,
+        /// in its own colour. Nothing while console kinds are on, the looks are off or the line has none.
         /// </summary>
-        public static PendingScope Expect(ChatMessage message, string messageText)
+        public static PendingScope Expect(ChatMessage message, string messageText, string mark = "")
         {
             if (!Looks || ConsoleKinds.Enabled)
                 return default;
@@ -71,8 +72,30 @@ namespace MinecraftClient.ChatBots
 
             if (looks is null)
                 return default;
+            if (mark.Length > 0)
+            {
+                if (WithMark(mark, text, looks) is not { } marked)
+                    return default;
+                (text, looks) = marked;
+            }
+
             pending = new Pending(text, looks);
             return new PendingScope(true);
+        }
+
+        /// <summary>
+        /// The line and its looks with the client's signature mark in front (<c>§&lt;colour&gt;▌§r</c>): the mark one
+        /// span of its colour before the line's own. None when the mark is not one colour and one character, or the
+        /// marked line would pass the cap.
+        /// </summary>
+        internal static (string Text, ConsoleLooks.Result Looks)? WithMark(string mark, string text, ConsoleLooks.Result looks)
+        {
+            string shown = ConsoleKinds.Plain(mark, 8);
+            if (mark.Length < 3 || mark[0] != '§' || !Uri.IsHexDigit(mark[1]) || shown.Length != 1
+                || text.Length + 1 > ConsoleKinds.MaxTextLength || !looks.Spans.StartsWith('[') || looks.Spans.Length < 3)
+                return null;
+            string code = char.ToLowerInvariant(mark[1]).ToString();
+            return (shown + text, looks with { Spans = "[[1,\"" + code + "\"]," + looks.Spans[1..] });
         }
 
         /// <summary>Ends <see cref="Expect"/>: looks the console did not print with their line are dropped.</summary>
