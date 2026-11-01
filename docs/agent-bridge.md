@@ -863,6 +863,11 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
 - Since 4.2.6, for every user: a respawn, a join, a configuration the server starts in play, a transfer and the
   connection's end close the open dialog as the game does (before, it stayed open, and `/dialog` could still press it
   on the next server).
+- Since 4.2.7, for every user: no play packet goes while the server configures the client (a proxy's server switch
+  from 1.20.2, or before the first join): a chat line waits in the client's queue until play, a plugin message goes as
+  the configuration's own, any other play packet (AntiAFK's sneak, a bot's action) is not sent then. Before, one sent in
+  that moment was read as another packet and the proxy dropped the connection (Velocity: "An internal error occurred in
+  your connection").
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

@@ -4316,8 +4316,29 @@ namespace MinecraftClient.Protocol.Handlers
         /// <param name="packetData">packet Data</param>
         private void SendPacket(PacketTypesOut packet, IEnumerable<byte> packetData)
         {
+            if (!PlayPacketGoes(currentState, packet))
+            {
+                // A plugin message is a configuration packet too: it goes as the configuration's own.
+                if (packet == PacketTypesOut.PluginMessage && currentState == CurrentState.Configuration)
+                    SendPacket(ConfigurationPacketTypesOut.PluginMessage, packetData);
+                else
+                    log.PacketDebug($"[C -> S] {packet} not sent: the connection is in {currentState}, not in play");
+                return;
+            }
+
             SendPacket(packetPalette.GetOutgoingIdByType(packet), packetData, packet.ToString());
         }
+
+        /// <summary>
+        /// Whether a play packet goes now (client 4.2.7): only in play, and the configuration's acknowledgement (the play
+        /// packet that ends play). A server reads a packet by the connection's state: a play packet while it configures the
+        /// client (a proxy's server switch after Start Configuration: Velocity, BungeeCord; or before the first join) is
+        /// read as another packet, and the proxy drops the connection ("an internal error occurred in your connection").
+        /// The client acts on its own clock (a queued chat line, AntiAFK's sneak, a bot's action), so this guards every
+        /// play packet; movement and the tick's end check the state themselves too.
+        /// </summary>
+        internal static bool PlayPacketGoes(CurrentState state, PacketTypesOut packet) =>
+            state == CurrentState.Play || packet == PacketTypesOut.AcknowledgeConfiguration;
 
         private void ProcessChunkBlockEntityData(int chunkX, int chunkZ, Queue<byte> packetData)
         {
@@ -5450,6 +5471,10 @@ namespace MinecraftClient.Protocol.Handlers
         {
             if (string.IsNullOrEmpty(message))
                 return true;
+
+            // Not now: the server configures the client (client 4.2.7). The line waits in the client's queue.
+            if (currentState != CurrentState.Play)
+                return false;
 
             // Process Chat Command - 1.19 and above
             if (protocolVersion >= MC_1_19_Version && message.StartsWith('/'))

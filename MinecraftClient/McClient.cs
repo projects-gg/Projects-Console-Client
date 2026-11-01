@@ -644,8 +644,12 @@ namespace MinecraftClient
 
             while (chatQueue.Count > 0 && nextMessageSendTime < DateTime.Now)
             {
-                string text = chatQueue.Dequeue();
-                handler.SendChatMessage(text, playerKeyPair);
+                // A line the connection cannot take now (the server configures the client: a proxy's server switch) stays
+                // first in the queue for a later tick, never sent in a state that would read it as another packet (4.2.7).
+                string text = chatQueue.Peek();
+                if (!handler.SendChatMessage(text, playerKeyPair))
+                    break;
+                chatQueue.Dequeue();
                 nextMessageSendTime = DateTime.Now + TimeSpan.FromSeconds(Config.Main.Advanced.MessageCooldown);
             }
         }
