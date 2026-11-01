@@ -130,6 +130,8 @@ can never arrive as type `system` with the PM's `suggest_command` click. The tex
 - `state`: the server's state id for the window at that moment (informational).
 - `items` lists only non-empty slots, sorted. `win_slot` with `item: null` means the slot became empty.
 - `by`: `server` (the server closed it), `client` (a `close` operation), `replaced` (another window opened).
+  Since client 4.2.6 a respawn or a world change (a proxy's server switch before 1.20.2 is one) closes the open window
+  with `by: "server"`, as the game closes it; a join (`joined`) or the connection's end (`left`) ends every window too.
 - Content first arrives as `win_items`. Later changes arrive as `win_slot` events, or as one `win_items`
   when more than 12 slots changed at once (a full resync).
 
@@ -783,6 +785,28 @@ them; an empty pause tag offers the server links when there are any):
 - `\dialog act {"open":"pause"|"quick"}` opens it in play as the game does (a dialog event first), answered by
   `menures`: `ok`, or `why` `menu` (none now) or `line`.
 
+## Client 4.2.6: the game's own screens close a dialog
+
+The game shows one of its own screens in a dialog's place, and the dialog (or its "waiting for response" screen) is
+gone: its world loading screen at every respawn and every join, its reconfiguration screen when the server starts a
+configuration in play, its connection screen at a transfer or when the connection ends. A proxy's server switch
+(Velocity, BungeeCord) is one of these: from 1.20.2 a configuration the proxy starts, then the new server's join; before,
+a join and a respawn, or respawns. Client 4.2.6 closes the dialog at each of them as the game does, nothing sent to the
+server and nothing printed, and reports the close as before:
+
+```text
+<nonce>@@MCC@@{"e":"dialog","rev":3,"clear":true}
+<nonce>@@MCC@@{"e":"joined","user":"Kaan_07","host":"play.example","port":25565,"protocol":775}
+```
+
+- No new event: a host or an app that knows `clear` needs nothing new. The close comes before the bridge's `joined` or
+  `disconnected` of the same moment; at a configuration's start the menus follow (none while configuring).
+- A dialog the server shows while configuring stays open until the join right after (the game's world loading screen
+  closes it then, as it closes any other).
+- Older clients report none of these closes: a host keeps no dialog across `joined` (above), which a proxy's switch from
+  1.20.2, and every switch of a server with dialogs (1.21.6+), ends in. Menus are not dialogs: they stay across `joined`,
+  as the client reports the new server's right before it.
+
 ## Host notes (`afk-host`)
 
 - Give the child exactly two extra descriptors and nothing else: the write end of the event pipe as fd 3 and
@@ -836,6 +860,9 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   translation's arguments' own looks.
 - Since 4.2.4: dialog cards (above), only with `MCC_CONSOLE_KINDS`. For every user: a dialog's command without `/`
   runs as a command (before, the client sent it as chat).
+- Since 4.2.6, for every user: a respawn, a join, a configuration the server starts in play, a transfer and the
+  connection's end close the open dialog as the game does (before, it stayed open, and `/dialog` could still press it
+  on the next server).
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);
