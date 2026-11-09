@@ -354,13 +354,19 @@ namespace MinecraftClient.Protocol.Handlers
                     cancelToken.ThrowIfCancellationRequested();
 
                     long elapsedMilliseconds = stopWatch.ElapsedMilliseconds;
-                    while (elapsedMilliseconds >= nextUpdateDue)
+                    if (elapsedMilliseconds >= nextUpdateDue)
                     {
-                        handler.OnUpdate();
-                        FlushPlayerInput(); // keys a bot changed after the tick's move, or a client without moves
-                        SendClientTickEnd();
-                        nextUpdateDue += ClientTickIntervalMilliseconds;
-                        elapsedMilliseconds = stopWatch.ElapsedMilliseconds;
+                        // The ticks due, at most ten in a row as the game's timer runs them: after a stall (a long
+                        // path search, the machine busy) the rest are dropped, not sent in a burst (client 4.2.8:
+                        // before, every missed tick went at once, which Grim TimerLimit flags as a sped-up client).
+                        long due = (elapsedMilliseconds - nextUpdateDue) / ClientTickIntervalMilliseconds + 1;
+                        for (int tick = 0; tick < TicksToRun(due); tick++)
+                        {
+                            handler.OnUpdate();
+                            FlushPlayerInput(); // keys a bot changed after the tick's move, or a client without moves
+                            SendClientTickEnd();
+                        }
+                        nextUpdateDue += due * ClientTickIntervalMilliseconds;
                     }
 
                     if (packetQueue.TryTake(out var packetInfo, 1))
@@ -4422,6 +4428,9 @@ namespace MinecraftClient.Protocol.Handlers
 
             return replies;
         }
+
+        /// <summary>How many of the client ticks due run now: the game's timer runs at most ten in a row.</summary>
+        internal static int TicksToRun(long due) => (int)Math.Clamp(due, 0, 10);
 
         /// <summary>
         /// Whether a move carries a rotation: one is given and it differs from the last one a move sent, as the game

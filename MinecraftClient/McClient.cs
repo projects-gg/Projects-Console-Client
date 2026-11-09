@@ -3664,6 +3664,13 @@ namespace MinecraftClient
 
             ClearInventories();
 
+            // A join, a proxy's server switch too, is a new world: the old one's blocks go and the player stands nowhere
+            // until this server places it (client 4.2.8: before, after a proxy's switch the physics went on walking the
+            // last server's ground and sent that position to the new server, whose anticheat set the player back at once).
+            if (terrainAndMovementsEnabled)
+                world.Clear();
+            AwaitServerPosition();
+
             // Every join, a proxy's server switch too, shows the game's world loading screen: an open dialog (one of the
             // configuration, or the old server's) closes, reported before the bots hear of the join.
             CloseDialogScreens();
@@ -3693,11 +3700,30 @@ namespace MinecraftClient
             {
                 world.Clear();
             }
+            AwaitServerPosition();
 
             entities.Clear();
             ClearKnownSigns();
             ClearInventories();
             DispatchBotEvent(bot => bot.OnRespawn());
+        }
+
+        /// <summary>
+        /// A join or a respawn puts the game's player in a new world: it does not move (no physics, no move sent) until
+        /// the server places it (Synchronize Player Position) and the chunk it stands in is loaded; a walk does not go on
+        /// into the new world (client 4.2.8).
+        /// </summary>
+        private void AwaitServerPosition()
+        {
+            lock (locationLock)
+            {
+                locationReceived = false;
+                physicsInitialized = false;
+                path = null;
+                pathTarget = null;
+                _yaw = null;
+                _pitch = null;
+            }
         }
 
         /// <summary>

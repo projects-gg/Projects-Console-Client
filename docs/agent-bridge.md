@@ -881,6 +881,10 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   movement keys go as Player Input before the move when they change (at most once a tick, with the sneak key), and
   Client Tick End goes after every tick (before, only from 26.3). Before, an anticheat saw a player walk without its
   forward key, sideways to where it looked, at full speed while sneaking, and stop dead at each waypoint.
+- Since 4.2.8, with terrain and movements: after a join (a proxy's server switch too) or a respawn the player does not
+  move until the server places it and the chunk it stands in is loaded, and a walk does not go on into the new world
+  (a movement operation answers `not_ready` until then). Before, after a proxy's switch the physics went on walking
+  the last server's ground and sent that position to the new server.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

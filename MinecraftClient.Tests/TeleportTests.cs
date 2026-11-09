@@ -279,6 +279,16 @@ public sealed class PlayerInputTests
         Assert.Equal(0x40, Protocol18Handler.PlayerInputKeys(false, false, false, false, false, false, true));
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(10, 10)]
+    [InlineData(40, 10)] // after a two-second stall: ten ticks, the rest dropped (Grim TimerLimit)
+    public void AtMostTenTicksRunInARow(long due, int run)
+    {
+        Assert.Equal(run, Protocol18Handler.TicksToRun(due));
+    }
+
     [Fact]
     public void AWalkThatJumpsPressesForwardAndJump()
     {
