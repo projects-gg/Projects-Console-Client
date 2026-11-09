@@ -868,6 +868,23 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   the configuration's own, any other play packet (AntiAFK's sneak, a bot's action) is not sent then. Before, one sent in
   that moment was read as another packet and the proxy dropped the connection (Velocity: "An internal error occurred in
   your connection").
+- Since 4.2.8, for every user: a server teleport is answered as the game answers it, right away and whatever its id
+  (anticheats send their setbacks with negative ids: Grim's `random.nextInt() | Integer.MIN_VALUE`): from 1.9 Accept
+  Teleportation with the id, then, for a client with terrain and movements, the position and look once with the ground
+  flag off (1.8: that move alone; 26.3: the acceptance with the position and look, as before). A relative yaw or pitch
+  adds to the player's own look in every version, and the look is rounded as that version's client rounds it. Before, a
+  negative id was taken for "no id": nothing was sent, the setback came again every tick and the anticheat kicked the
+  player (Grim BadPacketsN with AimDuplicateLook); before 26.3 a relative look also snapped the view to its 0/0.
+- Since 4.2.8, with terrain and movements: a move carries the rotation the move was made with, only when it changed
+  (a walk's turns toward its waypoints reach the server; a look already sent is not sent again); a look at the place
+  the player stands no longer stops its motion; the sneak key any bot pressed crouches the physics; from 1.21.2 the
+  movement keys go as Player Input before the move when they change (at most once a tick, with the sneak key), and
+  Client Tick End goes after every tick (before, only from 26.3). Before, an anticheat saw a player walk without its
+  forward key, sideways to where it looked, at full speed while sneaking, and stop dead at each waypoint.
+- Since 4.2.8, with terrain and movements: after a join (a proxy's server switch too) or a respawn the player does not
+  move until the server places it and the chunk it stands in is loaded, and a walk does not go on into the new world
+  (a movement operation answers `not_ready` until then). Before, after a proxy's switch the physics went on walking
+  the last server's ground and sent that position to the new server.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

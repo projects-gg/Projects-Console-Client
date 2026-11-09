@@ -104,6 +104,11 @@ namespace MinecraftClient.Protocol.Handlers
         private bool lastSentHorizontalCollision;
         private bool positionSentThisTick;
         private int positionReminder;
+        private byte movementKeys; // Player Input keys of this tick's move (1.21.2+)
+        private bool shiftKeyDown; // the sneak key an entity action pressed
+        private byte sentInputKeys; // the last Player Input sent; the game's player starts with no key down
+        private bool inputSentThisTick;
+        private int? ownEntityId; // the player's entity id (Join Game)
         private long chunkBatchStartTime;
         private double aggregatedNanosPerChunk = 2000000.0;
         private int oldSamplesWeight = 1;
@@ -349,12 +354,19 @@ namespace MinecraftClient.Protocol.Handlers
                     cancelToken.ThrowIfCancellationRequested();
 
                     long elapsedMilliseconds = stopWatch.ElapsedMilliseconds;
-                    while (elapsedMilliseconds >= nextUpdateDue)
+                    if (elapsedMilliseconds >= nextUpdateDue)
                     {
-                        handler.OnUpdate();
-                        SendClientTickEnd();
-                        nextUpdateDue += ClientTickIntervalMilliseconds;
-                        elapsedMilliseconds = stopWatch.ElapsedMilliseconds;
+                        // The ticks due, at most ten in a row as the game's timer runs them: after a stall (a long
+                        // path search, the machine busy) the rest are dropped, not sent in a burst (client 4.2.8:
+                        // before, every missed tick went at once, which Grim TimerLimit flags as a sped-up client).
+                        long due = (elapsedMilliseconds - nextUpdateDue) / ClientTickIntervalMilliseconds + 1;
+                        for (int tick = 0; tick < TicksToRun(due); tick++)
+                        {
+                            handler.OnUpdate();
+                            FlushPlayerInput(); // keys a bot changed after the tick's move, or a client without moves
+                            SendClientTickEnd();
+                        }
+                        nextUpdateDue += due * ClientTickIntervalMilliseconds;
                     }
 
                     if (packetQueue.TryTake(out var packetInfo, 1))
@@ -869,6 +881,7 @@ namespace MinecraftClient.Protocol.Handlers
 
                     messageIndex = 0;
                     pendingAcknowledgments = 0;
+                    sentInputKeys = 0; // The game's new player has sent no key yet: the held keys go again
 
                     lastReceivedMessage = null;
                     lastSeenMessagesCollector = protocolVersion >= MC_1_19_3_Version ? new(20) : new(5);
@@ -876,6 +889,7 @@ namespace MinecraftClient.Protocol.Handlers
                     handler.OnGameJoined(isOnlineMode);
 
                     var playerEntityId = dataTypes.ReadNextInt(packetData);
+                    ownEntityId = playerEntityId;
                     handler.OnReceivePlayerEntityID(playerEntityId);
 
                     if (protocolVersion >= MC_1_16_2_Version)
@@ -1663,103 +1677,29 @@ namespace MinecraftClient.Protocol.Handlers
                     if (protocolVersion >= MC_1_20_2_Version)
                         dataTypes.ReadNextBool(packetData); // Copy metadata (Data Kept) - 1.20.2 and above
 
+                    sentInputKeys = 0; // The game's new player has sent no key yet: the held keys go again
                     handler.OnRespawn();
                     break;
                 case PacketTypesIn.PlayerPositionAndLook:
                     {
-                        int teleportId;
-                        Location location;
-                        float yaw, pitch;
-                        int locMask;
+                        // Client 4.2.8: a teleport is answered as the game answers it, whatever its id. Anticheats
+                        // send their setbacks with negative ids (Grim: random.nextInt() | Integer.MIN_VALUE); the client
+                        // took a negative id for "no id" and sent nothing, so the setback came again every tick until
+                        // the anticheat kicked the player (BadPacketsN, AimDuplicateLook).
+                        ServerTeleport teleport = ReadServerTeleport(dataTypes, packetData, protocolVersion);
+                        (Location location, float yaw, float pitch) = ResolveServerTeleport(protocolVersion, teleport,
+                            handler.GetCurrentLocation(), NearestYaw(handler.GetYaw(), LastYaw), handler.GetPitch());
 
-                        if (protocolVersion >= MC_1_21_2_Version)
-                        {
-                            teleportId = dataTypes.ReadNextVarInt(packetData);
-                            location = new Location(
-                                dataTypes.ReadNextDouble(packetData), // X
-                                dataTypes.ReadNextDouble(packetData), // Y
-                                dataTypes.ReadNextDouble(packetData)  // Z
-                            );
-                            dataTypes.ReadNextDouble(packetData); // Delta X
-                            dataTypes.ReadNextDouble(packetData); // Delta Y
-                            dataTypes.ReadNextDouble(packetData); // Delta Z
-                            yaw = dataTypes.ReadNextFloat(packetData);
-                            pitch = dataTypes.ReadNextFloat(packetData);
-                            locMask = dataTypes.ReadNextInt(packetData); // Int flags (was Byte before 1.21.2)
-                        }
-                        else
-                        {
-                            location = new Location(
-                                dataTypes.ReadNextDouble(packetData), // X
-                                dataTypes.ReadNextDouble(packetData), // Y
-                                dataTypes.ReadNextDouble(packetData)  // Z
-                            );
-                            yaw = dataTypes.ReadNextFloat(packetData);
-                            pitch = dataTypes.ReadNextFloat(packetData);
-                            locMask = dataTypes.ReadNextByte(packetData);
-                            teleportId = protocolVersion >= MC_1_9_Version
-                                ? dataTypes.ReadNextVarInt(packetData) : -1;
-                        }
+                        LastYaw = yaw;
+                        LastPitch = pitch;
+                        handler.OnServerTeleport(location, yaw, pitch);
 
-                        // 26.3+: the teleport confirmation carries the resulting position, so relative values
-                        // must always be resolved to absolute ones (not only when terrain/entity handling is on)
-                        if (handler.GetTerrainEnabled() || handler.GetEntityHandlingEnabled() ||
-                            protocolVersion >= MC_26_3_Version)
-                        {
-                            if (protocolVersion >= MC_1_8_Version)
-                            {
-                                var currentLocation = handler.GetCurrentLocation();
-                                location.X = (locMask & 1 << 0) != 0 ? currentLocation.X + location.X : location.X;
-                                location.Y = (locMask & 1 << 1) != 0 ? currentLocation.Y + location.Y : location.Y;
-                                location.Z = (locMask & 1 << 2) != 0 ? currentLocation.Z + location.Z : location.Z;
-                            }
-                        }
-
-                        if (protocolVersion >= MC_26_3_Version)
-                        {
-                            yaw = (locMask & 1 << 3) != 0 ? LastYaw + yaw : yaw;
-                            pitch = (locMask & 1 << 4) != 0 ? LastPitch + pitch : pitch;
-                        }
-
-                        if (teleportId >= 0 && protocolVersion >= MC_26_3_Version)
-                        {
-                            LastYaw = yaw;
-                            LastPitch = pitch;
-                            handler.UpdateLocation(location, yaw, pitch);
-                            SendPacket(PacketTypesOut.TeleportConfirm, dataTypes.ConcatBytes(
-                                DataTypes.GetVarInt(teleportId),
-                                dataTypes.GetDouble(location.X),
-                                dataTypes.GetDouble(location.Y),
-                                dataTypes.GetDouble(location.Z),
-                                dataTypes.GetFloat(yaw),
-                                dataTypes.GetFloat(pitch)));
-                            // The confirmation already acts as the post-teleport move; an extra position
-                            // packet in the same tick would be rejected by the server
-                        }
-                        else if (teleportId >= 0)
-                        {
-                            LastYaw = yaw;
-                            LastPitch = pitch;
-                            handler.UpdateLocation(location, yaw, pitch);
-                            SendPacket(PacketTypesOut.TeleportConfirm, DataTypes.GetVarInt(teleportId));
-
-                            if (Config.Main.Advanced.TemporaryFixBadpacket)
-                            {
-                                SendLocationUpdate(location, true, false, yaw, pitch, true);
-
-                                if (teleportId == 1)
-                                    SendLocationUpdate(location, true, false, yaw, pitch, true);
-                            }
-                        }
-                        else
-                        {
-                            handler.UpdateLocation(location, yaw, pitch);
-                            LastYaw = yaw;
-                            LastPitch = pitch;
-                        }
-
-                        if (protocolVersion is >= MC_1_17_Version and < MC_1_19_4_Version)
-                            dataTypes.ReadNextBool(packetData); // Dismount Vehicle    - 1.17 to 1.19.3
+                        // Right away, before the next packet is read: an anticheat waits for them within its next
+                        // ping (Grim puts a transaction on each side of the teleport). Config.Main.Advanced
+                        // .TemporaryFixBadpacket sent a later, forced move for this; the game's own answer replaces it.
+                        foreach ((PacketTypesOut replyType, byte[] reply) in TeleportReplies(protocolVersion, dataTypes,
+                                     teleport, location, yaw, pitch, handler.GetTerrainEnabled()))
+                            SendPacket(replyType, reply);
                     }
                     break;
                 case PacketTypesIn.ChunkData:
@@ -2947,9 +2887,14 @@ namespace MinecraftClient.Protocol.Handlers
 
                     break;
                 case PacketTypesIn.EntityVelocity:
-                    if (handler.GetEntityHandlingEnabled())
                     {
+                        // The player's own motion (a hit's knockback, a plugin's push, an anticheat's setback) goes to
+                        // the physics as the game sets it, with entity handling off too (client 4.2.8: before, the client
+                        // never took it, and an anticheat flagged the knockback it did not take).
                         var entityId = dataTypes.ReadNextVarInt(packetData);
+                        bool ownMotion = entityId == ownEntityId && handler.GetTerrainEnabled();
+                        if (!ownMotion && !handler.GetEntityHandlingEnabled())
+                            break;
                         double velocityX, velocityY, velocityZ;
 
                         if (protocolVersion >= MC_1_21_9_Version)
@@ -2963,7 +2908,10 @@ namespace MinecraftClient.Protocol.Handlers
                             velocityZ = dataTypes.ReadNextShort(packetData) / 8000.0D;
                         }
 
-                        handler.OnEntityVelocity(entityId, velocityX, velocityY, velocityZ);
+                        if (ownMotion)
+                            handler.OnPlayerMotion(velocityX, velocityY, velocityZ, false);
+                        if (handler.GetEntityHandlingEnabled())
+                            handler.OnEntityVelocity(entityId, velocityX, velocityY, velocityZ);
                     }
 
                     break;
@@ -3150,6 +3098,8 @@ namespace MinecraftClient.Protocol.Handlers
                     Location explosionLocation;
                     float explosionStrength;
                     int explosionBlockCount;
+                    // The push the explosion gives the player, added to its motion as the game adds it (client 4.2.8)
+                    double knockbackX = 0, knockbackY = 0, knockbackZ = 0;
 
                     if (protocolVersion >= MC_1_21_2_Version)
                     {
@@ -3171,9 +3121,9 @@ namespace MinecraftClient.Protocol.Handlers
 
                         if (dataTypes.ReadNextBool(packetData)) // Has player knockback
                         {
-                            dataTypes.ReadNextDouble(packetData); // Knockback X
-                            dataTypes.ReadNextDouble(packetData); // Knockback Y
-                            dataTypes.ReadNextDouble(packetData); // Knockback Z
+                            knockbackX = dataTypes.ReadNextDouble(packetData);
+                            knockbackY = dataTypes.ReadNextDouble(packetData);
+                            knockbackZ = dataTypes.ReadNextDouble(packetData);
                         }
 
                         dataTypes.ReadParticleData(packetData, itemPalette); // Explosion particle
@@ -3220,9 +3170,9 @@ namespace MinecraftClient.Protocol.Handlers
                         for (var i = 0; i < explosionBlockCount; i++)
                             dataTypes.ReadNextByteArray(packetData, 3);
 
-                        dataTypes.ReadNextFloat(packetData); // Player Motion X
-                        dataTypes.ReadNextFloat(packetData); // Player Motion Y
-                        dataTypes.ReadNextFloat(packetData); // Player Motion Z
+                        knockbackX = dataTypes.ReadNextFloat(packetData); // Player Motion X
+                        knockbackY = dataTypes.ReadNextFloat(packetData); // Player Motion Y
+                        knockbackZ = dataTypes.ReadNextFloat(packetData); // Player Motion Z
 
                         if (protocolVersion >= MC_1_20_4_Version)
                         {
@@ -3240,6 +3190,8 @@ namespace MinecraftClient.Protocol.Handlers
                         }
                     }
 
+                    if ((knockbackX != 0 || knockbackY != 0 || knockbackZ != 0) && handler.GetTerrainEnabled())
+                        handler.OnPlayerMotion(knockbackX, knockbackY, knockbackZ, true);
                     handler.OnExplosion(explosionLocation, explosionStrength, explosionBlockCount);
                     break;
                 case PacketTypesIn.NamedSoundEffect:
@@ -3708,12 +3660,15 @@ namespace MinecraftClient.Protocol.Handlers
         }
 
         /// <summary>
-        /// 26.3+: end the client tick. The server allows only one position packet per client tick and
-        /// resets that limit when it receives ClientTickEnd, so this is sent after every OnUpdate while playing.
+        /// End the client tick, as the game does after every tick from 1.21.2 (client 4.2.8: before, only from 26.3).
+        /// Anticheats count the client's ticks by it: Grim, for a 1.21.2+ client, predicts each tick the client sent no
+        /// move for from it. 26.3+: the server allows only one position packet per client tick and resets that limit
+        /// when it receives ClientTickEnd, so this is sent after every OnUpdate while playing.
         /// </summary>
         private void SendClientTickEnd()
         {
-            if (protocolVersion < MC_26_3_Version || currentState != CurrentState.Play)
+            inputSentThisTick = false;
+            if (protocolVersion < MC_1_21_2_Version || currentState != CurrentState.Play)
                 return;
 
             positionSentThisTick = false;
@@ -4339,6 +4294,165 @@ namespace MinecraftClient.Protocol.Handlers
         /// </summary>
         internal static bool PlayPacketGoes(CurrentState state, PacketTypesOut packet) =>
             state == CurrentState.Play || packet == PacketTypesOut.AcknowledgeConfiguration;
+
+        /// <summary>
+        /// A server teleport (Synchronize Player Position) as the packet has it: the position and look, which of them are
+        /// relative to the player's own (<see cref="TeleportRelativeX"/> and the others), and the id the client accepts it
+        /// by. Any int is an id, a negative one too (anticheats use them for their setbacks); 1.8 and older have none.
+        /// </summary>
+        internal readonly record struct ServerTeleport(double X, double Y, double Z, float Yaw, float Pitch, int Relative,
+            bool HasId, int Id);
+
+        // A teleport's relative flags: the same bits from 1.8 (a byte; an int from 1.21.2 that adds the motion's).
+        internal const int TeleportRelativeX = 0x01;
+        internal const int TeleportRelativeY = 0x02;
+        internal const int TeleportRelativeZ = 0x04;
+        internal const int TeleportRelativeYaw = 0x08;
+        internal const int TeleportRelativePitch = 0x10;
+
+        /// <summary>Read a Synchronize Player Position packet in this version's layout.</summary>
+        internal static ServerTeleport ReadServerTeleport(DataTypes dataTypes, Queue<byte> packetData, int protocolVersion)
+        {
+            if (protocolVersion >= MC_1_21_2_Version)
+            {
+                int id = dataTypes.ReadNextVarInt(packetData);
+                double x = dataTypes.ReadNextDouble(packetData);
+                double y = dataTypes.ReadNextDouble(packetData);
+                double z = dataTypes.ReadNextDouble(packetData);
+                dataTypes.ReadNextDouble(packetData); // Delta X
+                dataTypes.ReadNextDouble(packetData); // Delta Y
+                dataTypes.ReadNextDouble(packetData); // Delta Z
+                float yaw = dataTypes.ReadNextFloat(packetData);
+                float pitch = dataTypes.ReadNextFloat(packetData);
+                int relative = dataTypes.ReadNextInt(packetData);
+                return new ServerTeleport(x, y, z, yaw, pitch, relative, true, id);
+            }
+
+            double lx = dataTypes.ReadNextDouble(packetData);
+            double ly = dataTypes.ReadNextDouble(packetData);
+            double lz = dataTypes.ReadNextDouble(packetData);
+            float lyaw = dataTypes.ReadNextFloat(packetData);
+            float lpitch = dataTypes.ReadNextFloat(packetData);
+            // 1.7 ends with the on-ground flag and every value is absolute; 1.8 has the relative flags there.
+            int flags = 0;
+            if (protocolVersion >= MC_1_8_Version)
+                flags = dataTypes.ReadNextByte(packetData);
+            else
+                dataTypes.ReadNextBool(packetData);
+            bool hasId = protocolVersion >= MC_1_9_Version;
+            int teleportId = hasId ? dataTypes.ReadNextVarInt(packetData) : 0;
+            if (protocolVersion is >= MC_1_17_Version and < MC_1_19_4_Version)
+                dataTypes.ReadNextBool(packetData); // Dismount Vehicle - 1.17 to 1.19.3
+            return new ServerTeleport(lx, ly, lz, lyaw, lpitch, flags, hasId, teleportId);
+        }
+
+        /// <summary>
+        /// Where the player stands and looks after a teleport, as the game works it out: a relative value is added to the
+        /// player's own (from 1.8, the rotation's too), then the rotation is rounded as that version's client rounds it
+        /// (what its answer and next moves carry): 1.8 keeps yaw and pitch modulo 360; 1.9 to 1.19.2 the yaw modulo 360 and
+        /// the pitch within ±90 (setPositionAndRotation, absMoveTo); 1.19.3 to 1.21.1 keep both as they are (setYRot,
+        /// setXRot); 1.21.2 to 1.21.4 the pitch modulo 360 then within ±90 (setXRot); from 1.21.5 the pitch within ±90
+        /// (PositionMoveRotation.calculateAbsolute).
+        /// </summary>
+        internal static (Location Location, float Yaw, float Pitch) ResolveServerTeleport(int protocolVersion,
+            ServerTeleport teleport, Location current, float currentYaw, float currentPitch)
+        {
+            if (protocolVersion < MC_1_8_Version)
+                return (new Location(teleport.X, teleport.Y, teleport.Z), teleport.Yaw, teleport.Pitch);
+
+            int relative = teleport.Relative;
+            Location location = new(
+                (relative & TeleportRelativeX) != 0 ? current.X + teleport.X : teleport.X,
+                (relative & TeleportRelativeY) != 0 ? current.Y + teleport.Y : teleport.Y,
+                (relative & TeleportRelativeZ) != 0 ? current.Z + teleport.Z : teleport.Z);
+            float yaw = (relative & TeleportRelativeYaw) != 0 ? currentYaw + teleport.Yaw : teleport.Yaw;
+            float pitch = (relative & TeleportRelativePitch) != 0 ? currentPitch + teleport.Pitch : teleport.Pitch;
+
+            if (protocolVersion < MC_1_9_Version)
+            {
+                yaw %= 360.0F;
+                pitch %= 360.0F;
+            }
+            else if (protocolVersion < MC_1_19_3_Version)
+            {
+                yaw %= 360.0F;
+                pitch = Math.Clamp(pitch, -90.0F, 90.0F);
+            }
+            else if (protocolVersion >= MC_1_21_5_Version)
+            {
+                pitch = Math.Clamp(pitch, -90.0F, 90.0F);
+            }
+            else if (protocolVersion >= MC_1_21_2_Version)
+            {
+                pitch = Math.Clamp(pitch % 360.0F, -90.0F, 90.0F);
+            }
+
+            return (location, yaw, pitch);
+        }
+
+        /// <summary>
+        /// What the game sends back for a teleport, in order, before it reads the next packet. From 1.9 it accepts the
+        /// teleport by its id, whatever the id is; 26.3's acceptance carries where the player now stands and looks and
+        /// is the teleport's move (no move follows it). Before 26.3 a client that moves then sends its position and look
+        /// once, the ground flag off (1.8 has no id: this move alone; a client without terrain and movements sends no
+        /// moves at all). The client's last sent position and look stay as they were, as the game's do: its next tick
+        /// sends what changed since its own last move.
+        /// </summary>
+        internal static List<(PacketTypesOut Type, byte[] Data)> TeleportReplies(int protocolVersion, DataTypes dataTypes,
+            ServerTeleport teleport, Location location, float yaw, float pitch, bool sendsMoves)
+        {
+            List<(PacketTypesOut, byte[])> replies = new(2);
+            if (teleport.HasId && protocolVersion >= MC_26_3_Version)
+            {
+                replies.Add((PacketTypesOut.TeleportConfirm, dataTypes.ConcatBytes(
+                    DataTypes.GetVarInt(teleport.Id),
+                    dataTypes.GetDouble(location.X),
+                    dataTypes.GetDouble(location.Y),
+                    dataTypes.GetDouble(location.Z),
+                    dataTypes.GetFloat(yaw),
+                    dataTypes.GetFloat(pitch))));
+                return replies;
+            }
+
+            if (teleport.HasId)
+                replies.Add((PacketTypesOut.TeleportConfirm, DataTypes.GetVarInt(teleport.Id)));
+
+            if (sendsMoves && protocolVersion >= MC_1_8_Version)
+                replies.Add((PacketTypesOut.PlayerPositionAndRotation, dataTypes.ConcatBytes(
+                    dataTypes.GetDouble(location.X),
+                    dataTypes.GetDouble(location.Y),
+                    dataTypes.GetDouble(location.Z),
+                    dataTypes.GetFloat(yaw),
+                    dataTypes.GetFloat(pitch),
+                    new byte[] { 0 }))); // On ground off (and, from 1.21.5, horizontal collision off)
+
+            return replies;
+        }
+
+        /// <summary>How many of the client ticks due run now: the game's timer runs at most ten in a row.</summary>
+        internal static int TicksToRun(long due) => (int)Math.Clamp(due, 0, 10);
+
+        /// <summary>
+        /// Whether a move carries a rotation: one is given and it differs from the last one a move sent, as the game
+        /// compares its look with its yRotLast and xRotLast (a teleport's answer does not change them).
+        /// </summary>
+        internal static bool RotationChanged(float? yaw, float? pitch, float lastSentYaw, float lastSentPitch) =>
+            yaw.HasValue && pitch.HasValue && (yaw.Value != lastSentYaw || pitch.Value != lastSentPitch);
+
+        /// <summary>
+        /// The yaw a look of <paramref name="yaw"/> degrees is, taken the short way round from the yaw the server knows:
+        /// the game's yaw turns on past 360 and below 0 and never jumps, while the client works its looks out in 0 to 360
+        /// (a walk's waypoint, a bot's look). The same look as the reference gives the reference itself.
+        /// </summary>
+        internal static float NearestYaw(float yaw, float reference)
+        {
+            float delta = (yaw - reference) % 360.0F;
+            if (delta >= 180.0F)
+                delta -= 360.0F;
+            else if (delta < -180.0F)
+                delta += 360.0F;
+            return Math.Abs(delta) < 1.0E-4F ? reference : reference + delta;
+        }
 
         private void ProcessChunkBlockEntityData(int chunkX, int chunkZ, Queue<byte> packetData)
         {
@@ -5577,8 +5691,59 @@ namespace MinecraftClient.Protocol.Handlers
             }
         }
 
+        // The keys of the Player Input packet (1.21.2+), one bit each.
+        internal const byte PlayerInputForward = 0x01;
+        internal const byte PlayerInputBackward = 0x02;
+        internal const byte PlayerInputLeft = 0x04;
+        internal const byte PlayerInputRight = 0x08;
+        internal const byte PlayerInputJump = 0x10;
         /// <summary>The sneak key of the Player Input packet (1.21.2+: forward 0x01 … jump 0x10, sneak 0x20, sprint 0x40).</summary>
         internal const byte PlayerInputSneak = 0x20;
+        internal const byte PlayerInputSprint = 0x40;
+
+        /// <summary>The Player Input byte for these keys.</summary>
+        internal static byte PlayerInputKeys(bool forward, bool back, bool left, bool right, bool jump, bool sneak,
+            bool sprint) =>
+            (byte)((forward ? PlayerInputForward : 0) | (back ? PlayerInputBackward : 0) | (left ? PlayerInputLeft : 0)
+                   | (right ? PlayerInputRight : 0) | (jump ? PlayerInputJump : 0) | (sneak ? PlayerInputSneak : 0)
+                   | (sprint ? PlayerInputSprint : 0));
+
+        /// <summary>
+        /// The keys this tick's move is made with (client 4.2.8). From 1.21.2 the game tells the server which keys are
+        /// down with Player Input whenever they change, before the tick's move, and anticheats predict the move from them
+        /// (Grim takes a key that was never pressed for no input: a walk without its forward key is a simulation flag).
+        /// The sneak key an entity action pressed is added to them.
+        /// </summary>
+        public void SetMovementKeys(bool forward, bool back, bool left, bool right, bool jump, bool sneak, bool sprint)
+        {
+            movementKeys = PlayerInputKeys(forward, back, left, right, jump, sneak, sprint);
+            FlushPlayerInput();
+        }
+
+        /// <summary>
+        /// Send the Player Input when the keys changed since the last one, at most once a client tick (as the game does;
+        /// Grim BadPacketsZ flags a second one before the tick's end): a change after this tick's input waits for the next
+        /// tick, which sends it before its move.
+        /// </summary>
+        private void FlushPlayerInput()
+        {
+            if (protocolVersion < MC_1_21_2_Version || currentState != CurrentState.Play || inputSentThisTick)
+                return;
+
+            byte keys = (byte)(movementKeys | (shiftKeyDown ? PlayerInputSneak : 0));
+            if (keys == sentInputKeys)
+                return;
+
+            try
+            {
+                SendPacket(PacketTypesOut.SteerVehicle, new[] { keys });
+                sentInputKeys = keys;
+                inputSentThisTick = true;
+            }
+            catch (SocketException) { }
+            catch (System.IO.IOException) { }
+            catch (ObjectDisposedException) { }
+        }
 
         /// <summary>
         /// How an entity action (<see cref="EntityActionType"/>) reaches a server of this protocol version. From 1.21.6
@@ -5610,14 +5775,17 @@ namespace MinecraftClient.Protocol.Handlers
         {
             try
             {
-                int? command = PlayerCommandAction(protocolVersion, ActionID, out bool sneak);
+                // The sneak key is a Player Input key too (1.21.2+): it goes with the tick's movement keys, once a tick
+                // and before the tick's move (client 4.2.8: before, from 1.21.6 a Player Input with the sneak key alone
+                // went at once, so the server read every other key as released while the client walked).
+                if (ActionID == (int)EntityActionType.StartSneaking)
+                    shiftKeyDown = true;
+                else if (ActionID == (int)EntityActionType.StopSneaking)
+                    shiftKeyDown = false;
+
+                int? command = PlayerCommandAction(protocolVersion, ActionID, out _);
                 if (command is null)
-                {
-                    // Player Input carries every movement key. This client moves by itself and has no other key
-                    // down: the sneak key alone, as the vanilla client sends it when shift is pressed or released.
-                    SendPacket(PacketTypesOut.SteerVehicle, new[] { sneak ? PlayerInputSneak : (byte)0 });
-                    return true;
-                }
+                    return true; // From 1.21.6 sneaking is the Player Input's sneak key alone (FlushPlayerInput)
 
                 List<byte> fields = new();
                 fields.AddRange(DataTypes.GetVarInt(PlayerEntityID));
@@ -5779,12 +5947,6 @@ namespace MinecraftClient.Protocol.Handlers
         /// <returns>True if the location update was successfully sent</returns>
         public bool SendLocationUpdate(Location location, bool onGround, bool horizontalCollision, float? yaw, float? pitch)
         {
-            return SendLocationUpdate(location, onGround, horizontalCollision, yaw, pitch, true);
-        }
-
-        public bool SendLocationUpdate(Location location, bool onGround, bool horizontalCollision, float? yaw = null, float? pitch = null,
-            bool forceUpdate = false)
-        {
             // Movement is a play packet. While the server reconfigures the client (e.g. a proxy
             // server switch after StartConfiguration) a play packet id is decoded as a configuration
             // packet and the connection is dropped. Physics keeps running, so the next tick resends.
@@ -5802,9 +5964,15 @@ namespace MinecraftClient.Protocol.Handlers
                 double dz = location.Z - lastSentZ;
                 double distSqr = dx * dx + dy * dy + dz * dz;
 
-                bool rotationChanged = false;
-                if (yaw.HasValue && pitch.HasValue)
-                    rotationChanged = forceUpdate || yaw.Value != lastSentYaw || pitch.Value != lastSentPitch;
+                // The yaw goes as the game's turns it, without a jump at north (client 4.2.8: before, a turn from 359°
+                // to 1° went as a 358° snap, which Grim AimModulo360 flags).
+                if (yaw.HasValue)
+                    yaw = NearestYaw(yaw.Value, LastYaw);
+
+                // A rotation goes only when it changed since the last move that carried one, as the game sends it
+                // (client 4.2.8: before, every given rotation went, so a look the client already had was sent again,
+                // which anticheats flag as a duplicate look; Grim AimDuplicateLook).
+                bool rotationChanged = RotationChanged(yaw, pitch, lastSentYaw, lastSentPitch);
 
                 positionReminder++;
 
