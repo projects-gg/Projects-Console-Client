@@ -125,12 +125,24 @@ namespace MinecraftClient.ChatBots
 
         public override void Update()
         {
-            count++;
-
-            if (count < nextrun) return;
+            if (!Due(IsScreenOpen()))
+                return;
             DoAntiAfkStuff();
             count = 0;
             nextrun = random.Next(Settings.DoubleToTick(Config.Delay.min), Settings.DoubleToTick(Config.Delay.max));
+        }
+
+        /// <summary>
+        /// One client tick of the bot's clock: true when its turn has come. While a screen is open (a window, the player's
+        /// own inventory) the clock stops and the bot neither sneaks nor walks: the game's player stands with every key up
+        /// then, and an anticheat flags a window click made while sneaking or walking (client 4.2.9: Grim MultiActionsC
+        /// cancelled an AFK account's trade clicks while AntiAFK held its sneak key). It goes on when the screen closes.
+        /// </summary>
+        internal bool Due(bool screenOpen)
+        {
+            if (screenOpen)
+                return false;
+            return ++count >= nextrun;
         }
 
         private void DoAntiAfkStuff()

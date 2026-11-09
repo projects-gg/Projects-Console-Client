@@ -319,6 +319,11 @@ namespace MinecraftClient.Protocol.Handlers
             // No Player Input before 1.21.2
         }
 
+        public void SetScreenOpen(bool open)
+        {
+            // No windows before 1.7
+        }
+
         private byte[] ReadNextByteArray()
         {
             short len = ReadNextShort();

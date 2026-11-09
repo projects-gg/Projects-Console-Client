@@ -24,6 +24,12 @@ namespace MinecraftClient.ChatBots
         /// <summary>A path is being walked (waypoints left, or one still being walked to).</summary>
         bool Walking { get; }
 
+        /// <summary>
+        /// A screen is open (a window, the player's own inventory): the player stands with every key up, as in the game,
+        /// and what runs waits for it to close (client 4.2.9).
+        /// </summary>
+        bool ScreenOpen { get; }
+
         string SelfName { get; }
 
         void Walk(IReadOnlyList<Location> waypoints);
@@ -128,6 +134,9 @@ namespace MinecraftClient.ChatBots
         private Location? lastPosition;
         private Location stuckFrom;
         private int stuckTicks;
+
+        // A screen was open on the last tick: what runs waited (client 4.2.9).
+        private bool paused;
 
         public AgentMovement(IMoveHost host, Action<MoveState> emit, Func<long>? clock = null, Func<long>? unixMs = null,
             Func<Func<Plan?>, Task<Plan?>>? runPlan = null, string? followNames = null)
@@ -325,6 +334,22 @@ namespace MinecraftClient.ChatBots
         {
             if (doing == "idle")
                 return;
+
+            // While a screen is open the player stands, as the game's does: a walk, steps or a follow wait (no stuck
+            // count, no new search) and go on when it closes; their time limit runs on (client 4.2.9: before, the walk
+            // went on while the client clicked the window, which Grim MultiActionsC cancels).
+            if (host.ScreenOpen)
+            {
+                paused = true;
+                return;
+            }
+
+            if (paused)
+            {
+                paused = false;
+                stuckTicks = 0;
+                stuckFrom = host.Position;
+            }
 
             Location position = host.Position;
             if (lastPosition is { } before && before.Distance(position) > TeleportBlocks)

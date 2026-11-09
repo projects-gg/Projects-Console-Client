@@ -1280,6 +1280,15 @@ namespace MinecraftClient.Scripting
         }
 
         /// <summary>
+        /// A screen is open: a window the server opened (a chest, a trade) or the player's own inventory while the client
+        /// clicks it. As in the game, the player stands with every key up meanwhile (client 4.2.9).
+        /// </summary>
+        protected bool IsScreenOpen()
+        {
+            return Handler.IsScreenOpen();
+        }
+
+        /// <summary>
         /// Look at the specified location
         /// </summary>
         /// <param name="location">Location to look at</param>

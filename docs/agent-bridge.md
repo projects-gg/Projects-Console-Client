@@ -885,6 +885,16 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   move until the server places it and the chunk it stands in is loaded, and a walk does not go on into the new world
   (a movement operation answers `not_ready` until then). Before, after a proxy's switch the physics went on walking
   the last server's ground and sent that position to the new server.
+- Since 4.2.9, for every user with inventory handling: while a screen is open (a window the server opened, until it
+  or the client closes it; the player's own inventory from a click on it until half a second after the last one, still
+  without a close packet) every key is up for the server, as the game releases them when a screen opens: from 1.21.2
+  a Player Input with no key down, sneaking (before 1.21.6 its Player Command) and sprinting stop, and a window click
+  or close goes only once the server knows (at once, or after the next tick's Player Input). With terrain and
+  movements the player stands meanwhile (no walk, no jump, no crouch); AntiAFK's clock stops (no sneak toggle, no
+  walk) and the bridge's `step`, `goto`, `approach` and `follow` wait (no stuck count; their time limit runs on); a
+  `sneak` operation reaches the server when the screen closes. Then the held keys go down again with the next tick.
+  A sneak or sprint Player Command goes only when it changes what the server knows. Before, an account clicked a trade
+  window with AntiAFK's sneak key down and Grim MultiActionsC cancelled every click ("sneaking=true", x15 in 33 s).
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

@@ -117,6 +117,13 @@ namespace MinecraftClient.Protocol
         void SetMovementKeys(bool forward, bool back, bool left, bool right, bool jump, bool sneak, bool sprint);
 
         /// <summary>
+        /// A screen opened or closed (client 4.2.9): a window the server opened, or the player's own inventory while the
+        /// client clicks it. As the game releases every key when a screen opens, the server is told no key is down until
+        /// it closes (then the held keys go down again), and a window click or close goes only once the server knows.
+        /// </summary>
+        void SetScreenOpen(bool open);
+
+        /// <summary>
         /// Send a held item change packet to the server.
         /// </summary>
         /// <param name="slot">New active slot in the inventory hotbar</param>

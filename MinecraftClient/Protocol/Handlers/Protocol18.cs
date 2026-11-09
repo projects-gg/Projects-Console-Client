@@ -104,10 +104,7 @@ namespace MinecraftClient.Protocol.Handlers
         private bool lastSentHorizontalCollision;
         private bool positionSentThisTick;
         private int positionReminder;
-        private byte movementKeys; // Player Input keys of this tick's move (1.21.2+)
-        private bool shiftKeyDown; // the sneak key an entity action pressed
-        private byte sentInputKeys; // the last Player Input sent; the game's player starts with no key down
-        private bool inputSentThisTick;
+        private readonly PlayerKeys playerKeys; // the keys the server is told about: Player Input, sneaking, sprinting
         private int? ownEntityId; // the player's entity id (Join Game)
         private long chunkBatchStartTime;
         private double aggregatedNanosPerChunk = 2000000.0;
@@ -155,6 +152,7 @@ namespace MinecraftClient.Protocol.Handlers
             randomGen = RandomNumberGenerator.Create();
             lastSeenMessagesCollector = protocolVersion >= MC_1_19_3_Version ? new(20) : new(5);
             chunkBatchStartTime = GetNanos();
+            playerKeys = new PlayerKeys(protocolVersion, SendKeysPacket);
 
             if (handler.GetTerrainEnabled() && protocolVersion > MC_26_3_Version)
             {
@@ -362,8 +360,9 @@ namespace MinecraftClient.Protocol.Handlers
                         long due = (elapsedMilliseconds - nextUpdateDue) / ClientTickIntervalMilliseconds + 1;
                         for (int tick = 0; tick < TicksToRun(due); tick++)
                         {
+                            playerKeys.StartTick(); // a window click or close that waited for the keys to be up
                             handler.OnUpdate();
-                            FlushPlayerInput(); // keys a bot changed after the tick's move, or a client without moves
+                            playerKeys.Flush(); // keys a bot changed after the tick's move, or a client without moves
                             SendClientTickEnd();
                         }
                         nextUpdateDue += due * ClientTickIntervalMilliseconds;
@@ -881,7 +880,7 @@ namespace MinecraftClient.Protocol.Handlers
 
                     messageIndex = 0;
                     pendingAcknowledgments = 0;
-                    sentInputKeys = 0; // The game's new player has sent no key yet: the held keys go again
+                    playerKeys.NewPlayer(); // The game's new player has sent no key yet: the held keys go again
 
                     lastReceivedMessage = null;
                     lastSeenMessagesCollector = protocolVersion >= MC_1_19_3_Version ? new(20) : new(5);
@@ -1677,7 +1676,7 @@ namespace MinecraftClient.Protocol.Handlers
                     if (protocolVersion >= MC_1_20_2_Version)
                         dataTypes.ReadNextBool(packetData); // Copy metadata (Data Kept) - 1.20.2 and above
 
-                    sentInputKeys = 0; // The game's new player has sent no key yet: the held keys go again
+                    playerKeys.NewPlayer(); // The game's new player has sent no key yet: the held keys go again
                     handler.OnRespawn();
                     break;
                 case PacketTypesIn.PlayerPositionAndLook:
@@ -3667,7 +3666,7 @@ namespace MinecraftClient.Protocol.Handlers
         /// </summary>
         private void SendClientTickEnd()
         {
-            inputSentThisTick = false;
+            playerKeys.EndTick();
             if (protocolVersion < MC_1_21_2_Version || currentState != CurrentState.Play)
                 return;
 
@@ -5716,33 +5715,41 @@ namespace MinecraftClient.Protocol.Handlers
         /// </summary>
         public void SetMovementKeys(bool forward, bool back, bool left, bool right, bool jump, bool sneak, bool sprint)
         {
-            movementKeys = PlayerInputKeys(forward, back, left, right, jump, sneak, sprint);
-            FlushPlayerInput();
+            playerKeys.SetMovementKeys(PlayerInputKeys(forward, back, left, right, jump, sneak, sprint));
         }
 
         /// <summary>
-        /// Send the Player Input when the keys changed since the last one, at most once a client tick (as the game does;
-        /// Grim BadPacketsZ flags a second one before the tick's end): a change after this tick's input waits for the next
-        /// tick, which sends it before its move.
+        /// A screen opened or closed (client 4.2.9): while one is open every key is up for the server, and a window click
+        /// or close goes only once the server knows it (<see cref="PlayerKeys"/>).
         /// </summary>
-        private void FlushPlayerInput()
+        public void SetScreenOpen(bool open)
         {
-            if (protocolVersion < MC_1_21_2_Version || currentState != CurrentState.Play || inputSentThisTick)
-                return;
+            playerKeys.SetScreenOpen(open);
+        }
 
-            byte keys = (byte)(movementKeys | (shiftKeyDown ? PlayerInputSneak : 0));
-            if (keys == sentInputKeys)
-                return;
+        /// <summary>One packet of the keys (<see cref="PlayerKeys"/>): only in play; false when it did not go.</summary>
+        private bool SendKeysPacket(PacketTypesOut packet, byte[] data)
+        {
+            if (!PlayPacketGoes(currentState, packet))
+                return false;
 
             try
             {
-                SendPacket(PacketTypesOut.SteerVehicle, new[] { keys });
-                sentInputKeys = keys;
-                inputSentThisTick = true;
+                SendPacket(packet, data);
+                return true;
             }
-            catch (SocketException) { }
-            catch (System.IO.IOException) { }
-            catch (ObjectDisposedException) { }
+            catch (SocketException)
+            {
+                return false;
+            }
+            catch (System.IO.IOException)
+            {
+                return false;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -5773,39 +5780,11 @@ namespace MinecraftClient.Protocol.Handlers
 
         public bool SendEntityAction(int PlayerEntityID, int ActionID)
         {
-            try
-            {
-                // The sneak key is a Player Input key too (1.21.2+): it goes with the tick's movement keys, once a tick
-                // and before the tick's move (client 4.2.8: before, from 1.21.6 a Player Input with the sneak key alone
-                // went at once, so the server read every other key as released while the client walked).
-                if (ActionID == (int)EntityActionType.StartSneaking)
-                    shiftKeyDown = true;
-                else if (ActionID == (int)EntityActionType.StopSneaking)
-                    shiftKeyDown = false;
-
-                int? command = PlayerCommandAction(protocolVersion, ActionID, out _);
-                if (command is null)
-                    return true; // From 1.21.6 sneaking is the Player Input's sneak key alone (FlushPlayerInput)
-
-                List<byte> fields = new();
-                fields.AddRange(DataTypes.GetVarInt(PlayerEntityID));
-                fields.AddRange(DataTypes.GetVarInt(command.Value));
-                fields.AddRange(DataTypes.GetVarInt(0));
-                SendPacket(PacketTypesOut.EntityAction, fields);
-                return true;
-            }
-            catch (SocketException)
-            {
-                return false;
-            }
-            catch (System.IO.IOException)
-            {
-                return false;
-            }
-            catch (ObjectDisposedException)
-            {
-                return false;
-            }
+            // The sneak key is a Player Input key too (1.21.2+): it goes with the tick's movement keys, once a tick and
+            // before the tick's move (client 4.2.8: before, from 1.21.6 a Player Input with the sneak key alone went at
+            // once, so the server read every other key as released while the client walked). The sneak and sprint keys
+            // stay up while a screen is open (client 4.2.9, PlayerKeys).
+            return playerKeys.EntityAction(PlayerEntityID, ActionID);
         }
 
         /// <summary>
@@ -6671,8 +6650,9 @@ namespace MinecraftClient.Protocol.Handlers
                 else
                     packet.AddRange(dataTypes.GetItemSlot(item, itemPalette));
 
-                SendPacket(PacketTypesOut.ClickWindow, packet);
-                return true;
+                // Once the server knows every key is up (client 4.2.9: Grim MultiActionsC cancels a click made with a
+                // movement, sneak or sprint key down)
+                return playerKeys.WindowPacket(PacketTypesOut.ClickWindow, packet.ToArray());
             }
             catch (SocketException)
             {
@@ -6952,11 +6932,11 @@ namespace MinecraftClient.Protocol.Handlers
                         window_actions[windowId] = 0;
                 }
 
-                SendPacket(PacketTypesOut.CloseWindow,
+                // Once the server knows every key is up (client 4.2.9: Grim MultiActionsD flags a close with a key down)
+                return playerKeys.WindowPacket(PacketTypesOut.CloseWindow,
                     protocolVersion >= MC_1_21_2_Version
                         ? DataTypes.GetVarInt(windowId)
                         : new[] { (byte)windowId });
-                return true;
             }
             catch (SocketException)
             {

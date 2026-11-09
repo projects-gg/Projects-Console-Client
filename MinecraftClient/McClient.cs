@@ -134,6 +134,12 @@ namespace MinecraftClient
         private volatile bool bridgeSneak;
         private int bridgeJumpTicks;
 
+        // A screen (client 4.2.9): a window the server opened, or the player's own inventory while the client clicks it.
+        // The game releases every key when one opens and the player stands until it closes; anticheats flag a window
+        // click or close made with a movement, sneak or sprint key down (Grim MultiActionsC cancels the click).
+        private readonly ScreenTracker screen = new();
+        private bool screenShown; // what the protocol handler was told (SetScreenOpen)
+
         // Entity handling
         private readonly Dictionary<int, Entity> entities = new();
         private readonly Lock signDataLock = new();
@@ -661,6 +667,10 @@ namespace MinecraftClient
         /// </summary>
         public void OnUpdate()
         {
+            // The player's own inventory closes a moment after the client's last click on it (ScreenTracker)
+            screen.Tick();
+            ShowScreen();
+
             foreach (ChatBot bot in bots.ToArray())
             {
                 try
@@ -721,13 +731,25 @@ namespace MinecraftClient
                         physicsInitialized = true;
                     }
 
-                    // Navigate pathfinding: set input based on current path
-                    UpdatePathfindingInput();
+                    // While a screen is open the player stands with every key up, as the game's does, and a walk or a
+                    // jump waits for it to close (client 4.2.9: before, the walk went on and the server was told its keys
+                    // while the client clicked the window, which Grim MultiActionsC cancels).
+                    bool screenOpen = screen.Open;
+                    if (screenOpen)
+                    {
+                        physicsInput.Reset();
+                        bridgeJumpTicks = 0;
+                    }
+                    else
+                    {
+                        // Navigate pathfinding: set input based on current path
+                        UpdatePathfindingInput();
+                    }
 
                     // The sneak key the server was told about (AntiAFK, a slab overhead, the sneak command) crouches the
                     // player as the game's shift key does: slower, never off an edge (client 4.2.8: before, the server
-                    // and its anticheat saw a sneaking player that walked at full speed).
-                    if (sneakKeyDown)
+                    // and its anticheat saw a sneaking player that walked at full speed). Not while a screen is open.
+                    if (sneakKeyDown && !screenOpen)
                     {
                         physicsInput.Sneak = true;
                         physicsInput.Sprint = false;
@@ -1476,6 +1498,8 @@ namespace MinecraftClient
                 inventoryHandlingRequested = false;
                 inventories.Clear();
                 ClearUnlockedRecipes();
+                screen.Clear();
+                ShowScreen();
             }
             return true;
         }
@@ -2313,6 +2337,11 @@ namespace MinecraftClient
             if (InvokeRequired)
                 return InvokeOnMainThread(() => DoWindowAction(windowId, slotId, action));
 
+            // The game clicks only on a screen, with every key up (client 4.2.9): the player's own inventory opens for
+            // the click when no window is open, and the click goes once the server knows the keys are up.
+            screen.Using();
+            ShowScreen();
+
             Item? item = null;
             if (inventories.ContainsKey(windowId) && inventories[windowId].Items.ContainsKey(slotId))
                 item = inventories[windowId].Items[slotId];
@@ -3101,11 +3130,36 @@ namespace MinecraftClient
                     inventories.Remove(windowId);
                     inventoriesWithFullContents.Remove(windowId);
                 }
+
+                // The close goes from the window's screen with every key up, as the game's (client 4.2.9: Grim
+                // MultiActionsD flags a close with a key down); then the screen closes and the held keys go down again.
+                screen.Using();
+                ShowScreen();
                 bool result = handler.SendCloseWindow(windowId);
+                screen.Closed(windowId);
+                ShowScreen();
                 DispatchBotEvent(bot => bot.OnInventoryClose(windowId));
                 return result;
             }
             return false;
+        }
+
+        /// <summary>
+        /// A screen is open (client 4.2.9): a window the server opened and has not closed, or the player's own inventory
+        /// while the client clicks it. As in the game, the player stands with every key up meanwhile (no walk, no jump,
+        /// no sneaking or sprinting for the server); AntiAFK and the agent bridge's movement wait for it to close.
+        /// </summary>
+        public bool IsScreenOpen() => screen.Open;
+
+        /// <summary>Tell the protocol handler when the screen opened or closed (it keeps the server's keys up meanwhile).</summary>
+        private void ShowScreen()
+        {
+            bool open = screen.Open;
+            if (open == screenShown)
+                return;
+
+            screenShown = open;
+            handler.SetScreenOpen(open);
         }
 
         /// <summary>
@@ -3124,6 +3178,8 @@ namespace MinecraftClient
             inventoriesWithFullContents.Clear();
             inventories[0] = new Container(0, ContainerType.PlayerInventory, "Player Inventory");
             ClearUnlockedRecipes();
+            screen.Clear(); // no window is left: no screen (a join, a respawn, a transfer)
+            ShowScreen();
             return true;
         }
 
@@ -4225,6 +4281,11 @@ namespace MinecraftClient
 
             if (inventoryID != 0)
             {
+                // The game opens the window's screen and releases every key (client 4.2.9): the server is told no key
+                // is down before any bot can click it.
+                screen.ServerOpened(inventoryID);
+                ShowScreen();
+
                 Log.Info(string.Format(Translations.extra_inventory_open, inventoryID, inventory.Title));
                 Log.Info(Translations.extra_inventory_interact);
                 DispatchBotEvent(bot => bot.OnInventoryOpen(inventoryID));
@@ -4244,6 +4305,10 @@ namespace MinecraftClient
         /// <param name="inventoryID">Inventory ID</param>
         public void OnInventoryClose(int inventoryID)
         {
+            // The game closes the screen it shows, whatever the id (client 4.2.9): the held keys go down again.
+            screen.ServerClosed();
+            ShowScreen();
+
             if (inventories.ContainsKey(inventoryID))
             {
                 if (inventoryID == 0)
