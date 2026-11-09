@@ -30,6 +30,7 @@ public sealed class AgentMovementTests
         public Location Position { get; set; } = new(0.5, Floor, 0.5);
         public float Yaw { get; set; } = 180; // north
         public bool Walking { get; set; }
+        public bool ScreenOpen { get; set; }
         public string SelfName => "AfkBot_1";
 
         public void Walk(IReadOnlyList<Location> waypoints)
@@ -160,6 +161,30 @@ public sealed class AgentMovementTests
         world.Walking = false;
         movement.Tick();
         Assert.Equal(("idle", "arrived"), (world.Events[^1].Doing, world.Events[^1].Ended));
+    }
+
+    [Fact]
+    public void AWalkWaitsWhileAScreenIsOpenAndGoesOnAfter()
+    {
+        // Client 4.2.9: the player stands with every key up while a window is open; the walk is not stuck meanwhile
+        World world = new();
+        AgentMovement movement = world.Controller();
+        Assert.Null(movement.Start(Op("goto", x: 20, z: 0)));
+        movement.Tick(); // the search finished: it walks
+        Assert.Single(world.Walks);
+
+        world.ScreenOpen = true; // a trade window opens: the player stands
+        for (int tick = 0; tick < 200; tick++)
+            movement.Tick();
+        Assert.Equal((0, 1, "goto"), (world.Halts, world.Walks.Count, movement.Doing));
+
+        world.ScreenOpen = false; // it closed: the walk goes on, and two seconds without progress count from now
+        for (int tick = 0; tick < 39; tick++)
+            movement.Tick();
+        Assert.Equal(0, world.Halts);
+        movement.Tick();
+        Assert.Equal(1, world.Halts); // stuck after all: it searches again, as before
+        Assert.Equal("goto", movement.Doing);
     }
 
     [Fact]

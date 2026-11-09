@@ -930,6 +930,7 @@ namespace MinecraftClient.ChatBots
             public Location Position => client.GetCurrentLocation();
             public float Yaw => client.GetYaw();
             public bool Walking => client.WalkingPath;
+            public bool ScreenOpen => client.IsScreenOpen();
             public string SelfName => client.GetUsername();
             public void Walk(IReadOnlyList<Location> waypoints) => client.WalkWaypoints(waypoints);
             public void Halt() => client.HaltPath();
