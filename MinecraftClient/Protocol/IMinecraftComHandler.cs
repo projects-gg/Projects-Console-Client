@@ -232,6 +232,27 @@ namespace MinecraftClient.Protocol
         void UpdateLocation(Location location, float yaw, float pitch);
 
         /// <summary>
+        /// The server teleported the player: the client stands and looks there now (relative values already added),
+        /// and the protocol handler answers the teleport itself; no look is left to send.
+        /// </summary>
+        /// <param name="location">New location of the player</param>
+        /// <param name="yaw">New yaw</param>
+        /// <param name="pitch">New pitch</param>
+        void OnServerTeleport(Location location, float yaw, float pitch);
+
+        /// <summary>
+        /// The server set the player's own motion (Set Entity Motion: a hit's knockback, a plugin's push), or added to it
+        /// (an explosion's push), in blocks per tick.
+        /// </summary>
+        void OnPlayerMotion(double x, double y, double z, bool add);
+
+        /// <summary>The player's yaw: where the client looks (a teleport's relative yaw adds to it).</summary>
+        float GetYaw();
+
+        /// <summary>The player's pitch: where the client looks (a teleport's relative pitch adds to it).</summary>
+        float GetPitch();
+
+        /// <summary>
         /// This method is called when the connection has been lost
         /// </summary>
         void OnConnectionLost(ChatBot.DisconnectReason reason, string message);

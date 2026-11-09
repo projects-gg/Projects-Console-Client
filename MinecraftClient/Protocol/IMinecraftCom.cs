@@ -111,6 +111,12 @@ namespace MinecraftClient.Protocol
         bool SendEntityAction(int EntityID, int type);
 
         /// <summary>
+        /// The movement keys this tick's move is made with, given right before the move (from 1.21.2 the protocol sends
+        /// them as Player Input when they changed, with the sneak key an entity action pressed).
+        /// </summary>
+        void SetMovementKeys(bool forward, bool back, bool left, bool right, bool jump, bool sneak, bool sprint);
+
+        /// <summary>
         /// Send a held item change packet to the server.
         /// </summary>
         /// <param name="slot">New active slot in the inventory hotbar</param>

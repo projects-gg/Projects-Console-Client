@@ -127,6 +127,7 @@ namespace MinecraftClient
         // Sneaking
         public bool IsSneaking { get; set; } = false;
         private bool isUnderSlab = false;
+        private bool sneakKeyDown; // the sneak key the last entity action pressed (any bot, the slab overhead, a command)
         private DateTime nextSneakingUpdate = DateTime.Now;
 
         // The agent bridge's movement (docs/agent-bridge.md, version 3): set only by the bridge, inert otherwise.
@@ -578,6 +579,7 @@ namespace MinecraftClient
             locationReceived = false;
             physicsInitialized = false;
             isUnderSlab = false;
+            sneakKeyDown = false;
             path = null;
             pathTarget = null;
             _yaw = null;
@@ -703,7 +705,10 @@ namespace MinecraftClient
                 TrySendMessageToServer();
             }
 
-            if (terrainAndMovementsEnabled && locationReceived)
+            // The game's player does not move while the chunk it stands in is not loaded: it stays on the loading screen
+            // and does not tick. Client 4.2.8: before, the physics ran without blocks right after a join or a teleport,
+            // fell through the ground and sent it, and an anticheat set the player back as soon as the chunk arrived.
+            if (terrainAndMovementsEnabled && locationReceived && world.GetChunkColumn(location) is { FullyLoaded: true })
             {
                 lock (locationLock)
                 {
@@ -718,6 +723,23 @@ namespace MinecraftClient
 
                     // Navigate pathfinding: set input based on current path
                     UpdatePathfindingInput();
+
+                    // The sneak key the server was told about (AntiAFK, a slab overhead, the sneak command) crouches the
+                    // player as the game's shift key does: slower, never off an edge (client 4.2.8: before, the server
+                    // and its anticheat saw a sneaking player that walked at full speed).
+                    if (sneakKeyDown)
+                    {
+                        physicsInput.Sneak = true;
+                        physicsInput.Sprint = false;
+                    }
+
+                    // While it eats the client keeps its movement keys up (NoteEating)
+                    if (eatingTicks > 0)
+                    {
+                        eatingTicks--;
+                        physicsInput.Forward = physicsInput.Back = physicsInput.Left = physicsInput.Right = false;
+                        physicsInput.Jump = physicsInput.Sprint = false;
+                    }
 
                     // Sync yaw/pitch if explicitly set (by commands/bots)
                     if (_yaw is not null) playerPhysics.Yaw = _yaw.Value;
@@ -738,11 +760,20 @@ namespace MinecraftClient
                         playerPhysics.Position.Y,
                         playerPhysics.Position.Z);
 
-                    playerYaw = _yaw ?? playerYaw;
-                    playerPitch = _pitch ?? playerPitch;
+                    // The look this tick's move was made with (a walk turns the physics toward its waypoint, a bot's
+                    // look sets it) goes with the move whenever it changed, as the game sends its rotation. Client
+                    // 4.2.8: before, only a bot's look went, so a walk's turns never reached the server, which saw the
+                    // player walk sideways to where it looked (an anticheat's simulation flags that).
+                    playerYaw = playerPhysics.Yaw;
+                    playerPitch = playerPhysics.Pitch;
+
+                    // The keys the move was made with go first (1.21.2+ Player Input, when they changed), as the game
+                    // sends them before its move (client 4.2.8: before, a walk never pressed its forward or jump key).
+                    handler.SetMovementKeys(physicsInput.Forward, physicsInput.Back, physicsInput.Left,
+                        physicsInput.Right, physicsInput.Jump, physicsInput.Sneak, physicsInput.Sprint);
 
                     // Send position packet
-                    handler.SendLocationUpdate(location, playerPhysics.OnGround, playerPhysics.HorizontalCollision, _yaw, _pitch);
+                    handler.SendLocationUpdate(location, playerPhysics.OnGround, playerPhysics.HorizontalCollision, playerYaw, playerPitch);
 
                     _yaw = null;
                     _pitch = null;
@@ -2042,7 +2073,14 @@ namespace MinecraftClient
             // The agent bridge holds the sneak key (version 3): other toggles would undo the player's choice.
             if (bridgeSneak && entityAction is EntityActionType.StartSneaking or EntityActionType.StopSneaking)
                 return true;
-            return InvokeOnMainThread(() => handler.SendEntityAction(playerEntityID, (int)entityAction));
+            return InvokeOnMainThread(() =>
+            {
+                if (entityAction == EntityActionType.StartSneaking)
+                    sneakKeyDown = true;
+                else if (entityAction == EntityActionType.StopSneaking)
+                    sneakKeyDown = false;
+                return handler.SendEntityAction(playerEntityID, (int)entityAction);
+            });
         }
 
         /// <summary>
@@ -2051,7 +2089,11 @@ namespace MinecraftClient
         /// <returns>TRUE if the item was successfully used</returns>
         public bool UseItemOnHand()
         {
-            return InvokeOnMainThread(() => handler.SendUseItem(0, sequenceId++));
+            return InvokeOnMainThread(() =>
+            {
+                NoteEating(36 + CurrentSlot);
+                return handler.SendUseItem(0, sequenceId++);
+            });
         }
 
         /// <summary>
@@ -2060,8 +2102,28 @@ namespace MinecraftClient
         /// <returns>TRUE if the item was successfully used</returns>
         public bool UseItemOnLeftHand()
         {
-            return InvokeOnMainThread(() => handler.SendUseItem(1, sequenceId++));
+            return InvokeOnMainThread(() =>
+            {
+                NoteEating(45);
+                return handler.SendUseItem(1, sequenceId++);
+            });
         }
+
+        /// <summary>
+        /// Eating (client 4.2.8): the game slows a player that uses an item to a fifth of its speed, and an anticheat
+        /// flags one that walks on at full speed while it eats (Grim NoSlow, Simulation). The client keeps its movement
+        /// keys up while it eats instead (a bite takes 32 ticks; <see cref="EatingTicks"/> leaves the server's clock a
+        /// margin), and a slot change ends it as it ends the game's.
+        /// </summary>
+        private void NoteEating(int slot)
+        {
+            if (inventories.TryGetValue(0, out Container? inventory)
+                && inventory.Items.TryGetValue(slot, out Item? item) && item.Type.IsFood())
+                eatingTicks = EatingTicks;
+        }
+
+        private const int EatingTicks = 40;
+        private int eatingTicks;
 
         /// <summary>
         /// Try to merge a slot
@@ -3269,6 +3331,7 @@ namespace MinecraftClient
                 return InvokeOnMainThread(() => ChangeSlot(slot));
 
             CurrentSlot = Convert.ToByte(slot);
+            eatingTicks = 0; // A slot change ends eating (NoteEating)
             return handler.SendHeldItemChange(slot);
         }
 
@@ -3748,7 +3811,11 @@ namespace MinecraftClient
             bridgeSneak = on;
             IsSneaking = on;
             EntityActionType action = on ? EntityActionType.StartSneaking : EntityActionType.StopSneaking;
-            return InvokeOnMainThread(() => handler.SendEntityAction(playerEntityID, (int)action));
+            return InvokeOnMainThread(() =>
+            {
+                sneakKeyDown = on;
+                return handler.SendEntityAction(playerEntityID, (int)action);
+            });
         }
 
         /// <summary>
@@ -3862,8 +3929,12 @@ namespace MinecraftClient
                 else this.location = location;
                 locationReceived = true;
 
-                // Sync physics engine position
-                if (physicsInitialized)
+                // Sync physics engine position. Only a new position moves it (and stops it): a look at the place the
+                // player stands keeps its motion (client 4.2.8: before, a walk's turn toward each waypoint stopped the
+                // player dead, a move the game never makes and an anticheat's simulation flags).
+                if (physicsInitialized && (playerPhysics.Position.X != this.location.X
+                                           || playerPhysics.Position.Y != this.location.Y
+                                           || playerPhysics.Position.Z != this.location.Z))
                 {
                     playerPhysics.Teleport(this.location.X, this.location.Y, this.location.Z);
                 }
@@ -3882,6 +3953,48 @@ namespace MinecraftClient
             _yaw = yaw;
             _pitch = pitch;
             UpdateLocation(location, false);
+        }
+
+        /// <summary>
+        /// The server teleported the player (Synchronize Player Position): the client stands and looks there now, as the
+        /// game sets its position and rotation before it answers (the protocol handler sends the answer). A look a bot
+        /// asked for and the client has not sent yet is replaced, as before. Client 4.2.8: before, the teleport's look
+        /// was queued like a bot's and sent again on the next tick, an unchanged rotation that anticheats read as a
+        /// duplicate look.
+        /// </summary>
+        public void OnServerTeleport(Location location, float yaw, float pitch)
+        {
+            lock (locationLock)
+            {
+                _yaw = null;
+                _pitch = null;
+                playerYaw = yaw;
+                playerPitch = pitch;
+                this.location = location;
+                locationReceived = true;
+                if (physicsInitialized)
+                {
+                    playerPhysics.Yaw = yaw;
+                    playerPhysics.Pitch = pitch;
+                    playerPhysics.Teleport(location.X, location.Y, location.Z);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The server set the player's motion (a hit's knockback, a plugin's push) or added to it (an explosion): the
+        /// physics moves on with it as the game does (Entity.lerpMotion; an explosion adds its push). Client 4.2.8:
+        /// before, the client never took it, so an anticheat saw a player that shrugged off every knockback.
+        /// </summary>
+        public void OnPlayerMotion(double x, double y, double z, bool add)
+        {
+            lock (locationLock)
+            {
+                if (!physicsInitialized)
+                    return;
+                Vec3d motion = new(x, y, z);
+                playerPhysics.DeltaMovement = add ? playerPhysics.DeltaMovement + motion : motion;
+            }
         }
 
         /// <summary>

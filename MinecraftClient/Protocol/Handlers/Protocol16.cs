@@ -314,6 +314,11 @@ namespace MinecraftClient.Protocol.Handlers
             return false;
         }
 
+        public void SetMovementKeys(bool forward, bool back, bool left, bool right, bool jump, bool sneak, bool sprint)
+        {
+            // No Player Input before 1.21.2
+        }
+
         private byte[] ReadNextByteArray()
         {
             short len = ReadNextShort();
