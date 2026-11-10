@@ -901,7 +901,13 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   sends such a close whenever a plugin closes the player's inventory with no window open; a window the client still
   lists then closes too, since the server has none open. Before, the close emptied the player inventory until the next
   respawn or window: after a TradeSystem trade an account's `inv` no longer showed the items it kept (3 apples before,
-  one sold) and the sale went to staff review.
+  one sold) and the sale went to staff review. The cursor is the open window's, as in the game from 1.17: when a window
+  closes (the server's close, or the client's own) `inv` reports the cursor empty, and the item the server puts back
+  shows in its slot. An item the server sets by player inventory index (Set Player Inventory from 1.21.2, window -2
+  before: an item put back, a picked block) shows where the game shows it: the hotbar at slots 36-44, the main
+  inventory at 9-35, the armor at 5-8 (head to feet), the off hand at 45, and in an open window's player part too.
+  Before, the client wrote the index as a slot: an item put back in the hotbar showed in the crafting grid or an armor
+  slot (`inv` slots 0-8).
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);
