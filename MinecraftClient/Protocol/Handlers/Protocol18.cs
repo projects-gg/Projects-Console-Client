@@ -3490,9 +3490,11 @@ namespace MinecraftClient.Protocol.Handlers
                 case PacketTypesIn.SetPlayerInventory:
                     if (handler.GetInventoryEnabled())
                     {
+                        // A player inventory index, as window -2's slot before 1.21.2 (McClient.OnSetSlot maps it).
                         var slotId = dataTypes.ReadNextVarInt(packetData);
                         var item = dataTypes.ReadNextItemSlot(packetData, itemPalette);
-                        handler.OnSetSlot(0, (short)slotId, item, -1);
+                        if (slotId is >= short.MinValue and <= short.MaxValue)
+                            handler.OnSetSlot(254, (short)slotId, item, -1);
                     }
                     break;
 

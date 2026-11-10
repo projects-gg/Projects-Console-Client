@@ -2340,6 +2340,69 @@ namespace MinecraftClient
         }
 
         /// <summary>
+        /// The window 0 slot that shows a player inventory index, as the game's InventoryMenu lays it out (client 4.2.10):
+        /// the hotbar (0-8) at 36-44, the main inventory (9-35) at 9-35, the armor (36 feet, 37 legs, 38 chest, 39 head)
+        /// at 8 down to 5, the off hand (40) at 45. Other indexes (a body armor or saddle slot) are not in window 0.
+        /// </summary>
+        internal static bool TryGetPlayerInventoryWindowSlot(int index, out int windowSlot)
+        {
+            windowSlot = index switch
+            {
+                >= 0 and <= 8 => index + 36,
+                >= 9 and <= 35 => index,
+                >= 36 and <= 39 => 44 - index,
+                40 => 45,
+                _ => -1,
+            };
+            return windowSlot >= 0;
+        }
+
+        /// <summary>
+        /// Set a player inventory index (window -2 before 1.21.2, Set Player Inventory from 1.21.2) as the game does
+        /// (client 4.2.10): it sets the player's inventory, which window 0 shows, and a window's player part too (the
+        /// main inventory and the hotbar), once the server sent that window's whole content. The server sends it when
+        /// it puts an item back into the inventory (a closed window's cursor or crafting grid) or picks a block.
+        /// </summary>
+        /// <returns>The windows other than 0 whose player part changed</returns>
+        internal static List<int> SetPlayerInventoryIndex(
+            Dictionary<int, Container> windows, HashSet<int> withFullContents, int index, Item? item)
+        {
+            List<int> changed = [];
+            if (!TryGetPlayerInventoryWindowSlot(index, out int playerSlot)
+                || !windows.TryGetValue(0, out Container? playerInventory))
+                return changed;
+
+            SetWindowSlot(playerInventory, playerSlot, item);
+            if (playerSlot is < 9 or > 44)
+                return changed; // the armor and the off hand: only window 0 shows them
+
+            foreach ((int id, Container window) in windows)
+            {
+                if (id == 0 || !withFullContents.Contains(id)
+                    || !TryGetMirroredPlayerInventoryRange(window, out int firstWindowSlot, out _))
+                    continue;
+
+                // The window's player part holds window 0's 9-44 in the same order (main inventory, then hotbar).
+                if (SetWindowSlot(window, firstWindowSlot + playerSlot - 9, item?.CloneWithCount(item.Count)))
+                    changed.Add(id);
+            }
+
+            return changed;
+        }
+
+        /// <returns>TRUE if the slot changed</returns>
+        private static bool SetWindowSlot(Container window, int slot, Item? item)
+        {
+            window.Items.TryGetValue(slot, out Item? previousItem);
+            if (item is null || item.IsEmpty)
+                window.Items.Remove(slot);
+            else
+                window.Items[slot] = item;
+
+            return !AreSameInventorySlot(previousItem, item);
+        }
+
+        /// <summary>
         /// Click a slot in the specified window
         /// </summary>
         /// <returns>TRUE if the slot was successfully clicked</returns>
@@ -3136,11 +3199,8 @@ namespace MinecraftClient
 
             if (inventories.ContainsKey(windowId))
             {
-                if (windowId != 0)
-                {
-                    inventories.Remove(windowId);
-                    inventoriesWithFullContents.Remove(windowId);
-                }
+                // A window goes with its cursor, the player's inventory stays as it is (client 4.2.10).
+                bool cursorDropped = CloseClientWindow(inventories, inventoriesWithFullContents, windowId);
 
                 // The close goes from the window's screen with every key up, as the game's (client 4.2.9: Grim
                 // MultiActionsD flags a close with a key down); then the screen closes and the held keys go down again.
@@ -3150,6 +3210,8 @@ namespace MinecraftClient
                 screen.Closed(windowId);
                 ShowScreen();
                 DispatchBotEvent(bot => bot.OnInventoryClose(windowId));
+                if (cursorDropped)
+                    DispatchBotEvent(bot => bot.OnInventoryUpdate(0));
                 return result;
             }
             return false;
@@ -4320,7 +4382,8 @@ namespace MinecraftClient
             screen.ServerClosed();
             ShowScreen();
 
-            foreach (int closedID in CloseServerWindow(inventories, inventoriesWithFullContents, inventoryID))
+            List<int> closedIDs = CloseServerWindow(inventories, inventoriesWithFullContents, inventoryID, out bool cursorDropped);
+            foreach (int closedID in closedIDs)
             {
                 Log.Info(string.Format(Translations.extra_inventory_close, closedID));
                 DispatchBotEvent(bot => bot.OnInventoryClose(closedID));
@@ -4328,41 +4391,75 @@ namespace MinecraftClient
                     Tui.InventoryTuiHost.NotifyInventoryClosed(closedID);
             }
 
+            if (cursorDropped)
+                DispatchBotEvent(bot => bot.OnInventoryUpdate(0));
+
             Tui.InventoryTuiHost.NotifyInventoryClosed(inventoryID);
         }
 
         /// <summary>
         /// What a server's Close Container does to the client's windows (client 4.2.10), as in the game: the player's
-        /// inventory (window 0) stays as it is, its cursor too, and a closed window goes. The server names the window
-        /// it has open, 0 when none is (a plugin's closeInventory() with no window open): a close of 0 says the player
-        /// is on its own inventory, so a window still listed is no longer open there and goes too (the game's close
-        /// goes back to the player's inventory whatever the id). The server sends again only the slots its close
-        /// changes (a crafting grid or cursor put back), never the rest: before, a close of 0 emptied window 0 and it
-        /// stayed empty until the next respawn or window (production, kz1: an AFK account's inventory read empty
-        /// after a trade).
+        /// inventory (window 0) stays as it is, and a closed window goes. The server names the window it has open, 0
+        /// when none is (a plugin's closeInventory() with no window open): a close of 0 says the player is on its own
+        /// inventory, so a window still listed is no longer open there and goes too (the game's close goes back to the
+        /// player's inventory whatever the id). The server sends again only the slots its close changes (a crafting
+        /// grid or cursor put back), never the rest: before, a close of 0 emptied window 0 and it stayed empty until
+        /// the next respawn or window (production, kz1: an AFK account's inventory read empty after a trade).
+        /// The cursor goes with a window that closes (<see cref="DropWindowCursor"/>) and stays when nothing listed
+        /// closes (a close of 0 with no window open: the server sends the cursor again if its close changed it).
         /// </summary>
+        /// <param name="cursorDropped">TRUE if the player's inventory changed: the cursor went</param>
         /// <returns>The windows that closed, for the bots: the named one when not 0 (also when it was not listed)</returns>
         internal static List<int> CloseServerWindow(
-            Dictionary<int, Container> windows, HashSet<int> withFullContents, int windowId)
+            Dictionary<int, Container> windows, HashSet<int> withFullContents, int windowId, out bool cursorDropped)
         {
             List<int> closed = [];
+            bool listedClosed = false;
             if (windowId != 0)
             {
-                windows.Remove(windowId);
+                listedClosed = windows.Remove(windowId);
                 withFullContents.Remove(windowId);
                 closed.Add(windowId);
-                return closed;
             }
-
-            foreach (int listedId in windows.Keys.Where(id => id != 0).Order().ToList())
+            else
             {
-                windows.Remove(listedId);
-                withFullContents.Remove(listedId);
-                closed.Add(listedId);
+                foreach (int listedId in windows.Keys.Where(id => id != 0).Order().ToList())
+                {
+                    windows.Remove(listedId);
+                    withFullContents.Remove(listedId);
+                    closed.Add(listedId);
+                    listedClosed = true;
+                }
             }
 
+            cursorDropped = listedClosed && DropWindowCursor(windows);
             return closed;
         }
+
+        /// <summary>
+        /// What the client's own close does to its windows (client 4.2.10), as in the game: a window goes with its
+        /// cursor (<see cref="DropWindowCursor"/>); the player's inventory (window 0) stays as it is, its cursor too
+        /// (the game keeps the cursor of its own inventory, and the server sends it again if its close puts it back).
+        /// </summary>
+        /// <returns>TRUE if the player's inventory changed: the cursor went</returns>
+        internal static bool CloseClientWindow(Dictionary<int, Container> windows, HashSet<int> withFullContents, int windowId)
+        {
+            if (windowId == 0 || !windows.Remove(windowId))
+                return false;
+
+            withFullContents.Remove(windowId);
+            return DropWindowCursor(windows);
+        }
+
+        /// <summary>
+        /// The cursor belongs to the open window (from 1.17 the game keeps it on each window's menu): when a window
+        /// closes the game goes back to the player's inventory, whose cursor is empty, and the server puts the window's
+        /// cursor item back into the inventory (Set Player Inventory) or drops it, without a word on the cursor. The
+        /// client keeps one cursor, window 0's slot -1: before, it kept the closed window's item there.
+        /// </summary>
+        /// <returns>TRUE if a cursor item went</returns>
+        private static bool DropWindowCursor(Dictionary<int, Container> windows) =>
+            windows.TryGetValue(0, out Container? playerInventory) && playerInventory.Items.Remove(-1);
 
         /// <summary>
         /// When received window properties from server.
@@ -4503,9 +4600,17 @@ namespace MinecraftClient
             if (inventories.ContainsKey(inventoryID))
                 inventories[inventoryID].StateID = stateId;
 
-            // Handle inventoryID -2 - Add item to player inventory without animation
+            // Window -2 before 1.21.2, Set Player Inventory from 1.21.2 (client 4.2.10): a player inventory index, not a
+            // window slot. Before, the hotbar's 0-8 landed on window 0's crafting grid and armor slots.
             if (inventoryID == 254)
-                inventoryID = 0;
+            {
+                List<int> windowsChanged = SetPlayerInventoryIndex(inventories, inventoriesWithFullContents, slotID, item);
+                DispatchBotEvent(bot => bot.OnInventoryUpdate(0));
+                foreach (int windowID in windowsChanged)
+                    DispatchBotEvent(bot => bot.OnInventoryUpdate(windowID));
+                return;
+            }
+
             // Handle cursor item
             if (inventoryID == 255 && slotID == -1)
             {
