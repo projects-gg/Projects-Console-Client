@@ -895,6 +895,13 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   `sneak` operation reaches the server when the screen closes. Then the held keys go down again with the next tick.
   A sneak or sprint Player Command goes only when it changes what the server knows. Before, an account clicked a trade
   window with AntiAFK's sneak key down and Grim MultiActionsC cancelled every click ("sneaking=true", x15 in 33 s).
+- Since 4.2.10, for every user with inventory handling: a server's close of the player's own inventory (window 0) only
+  closes the screen, as in the game: the player inventory and the cursor stay as they are, and `inv` keeps reporting
+  them (the server sends again only the slots its close changes, such as a crafting grid or cursor put back). Paper
+  sends such a close whenever a plugin closes the player's inventory with no window open; a window the client still
+  lists then closes too, since the server has none open. Before, the close emptied the player inventory until the next
+  respawn or window: after a TradeSystem trade an account's `inv` no longer showed the items it kept (3 apples before,
+  one sold) and the sale went to staff review.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);

@@ -2277,18 +2277,29 @@ namespace MinecraftClient
             return true;
         }
 
-        private bool SyncPlayerInventorySlotsFromWindow(Container? inventory)
+        private bool SyncPlayerInventorySlotsFromWindow(Container? inventory) =>
+            SyncPlayerInventorySlotsFromWindow(inventories, inventoriesWithFullContents, inventory);
+
+        /// <summary>
+        /// Mirror a window's player inventory part into the player's inventory (window 0), once the server sent the
+        /// window's whole content (<paramref name="withFullContents"/>). The server does not send those slots again for
+        /// window 0 after the window closes: it takes the window's view of them as what the client knows
+        /// (AbstractContainerMenu.transferState).
+        /// </summary>
+        /// <returns>TRUE if the player's inventory changed</returns>
+        internal static bool SyncPlayerInventorySlotsFromWindow(
+            Dictionary<int, Container> windows, HashSet<int> withFullContents, Container? inventory)
         {
             if (inventory is null)
                 return false;
 
-            if (!inventoriesWithFullContents.Contains(inventory.ID))
+            if (!withFullContents.Contains(inventory.ID))
                 return false;
 
             if (!TryGetMirroredPlayerInventoryRange(inventory, out int firstWindowSlot, out int lastWindowSlot))
                 return false;
 
-            if (!inventories.TryGetValue(0, out Container? playerInventory))
+            if (!windows.TryGetValue(0, out Container? playerInventory))
                 return false;
 
             const int firstPlayerInventorySlot = 9;
@@ -4309,27 +4320,48 @@ namespace MinecraftClient
             screen.ServerClosed();
             ShowScreen();
 
-            if (inventories.ContainsKey(inventoryID))
+            foreach (int closedID in CloseServerWindow(inventories, inventoriesWithFullContents, inventoryID))
             {
-                if (inventoryID == 0)
-                {
-                    inventories[0].Items.Clear(); // Don't delete player inventory
-                    inventoriesWithFullContents.Clear();
-                }
-                else
-                {
-                    inventories.Remove(inventoryID);
-                    inventoriesWithFullContents.Remove(inventoryID);
-                }
-            }
-
-            if (inventoryID != 0)
-            {
-                Log.Info(string.Format(Translations.extra_inventory_close, inventoryID));
-                DispatchBotEvent(bot => bot.OnInventoryClose(inventoryID));
+                Log.Info(string.Format(Translations.extra_inventory_close, closedID));
+                DispatchBotEvent(bot => bot.OnInventoryClose(closedID));
+                if (closedID != inventoryID)
+                    Tui.InventoryTuiHost.NotifyInventoryClosed(closedID);
             }
 
             Tui.InventoryTuiHost.NotifyInventoryClosed(inventoryID);
+        }
+
+        /// <summary>
+        /// What a server's Close Container does to the client's windows (client 4.2.10), as in the game: the player's
+        /// inventory (window 0) stays as it is, its cursor too, and a closed window goes. The server names the window
+        /// it has open, 0 when none is (a plugin's closeInventory() with no window open): a close of 0 says the player
+        /// is on its own inventory, so a window still listed is no longer open there and goes too (the game's close
+        /// goes back to the player's inventory whatever the id). The server sends again only the slots its close
+        /// changes (a crafting grid or cursor put back), never the rest: before, a close of 0 emptied window 0 and it
+        /// stayed empty until the next respawn or window (production, kz1: an AFK account's inventory read empty
+        /// after a trade).
+        /// </summary>
+        /// <returns>The windows that closed, for the bots: the named one when not 0 (also when it was not listed)</returns>
+        internal static List<int> CloseServerWindow(
+            Dictionary<int, Container> windows, HashSet<int> withFullContents, int windowId)
+        {
+            List<int> closed = [];
+            if (windowId != 0)
+            {
+                windows.Remove(windowId);
+                withFullContents.Remove(windowId);
+                closed.Add(windowId);
+                return closed;
+            }
+
+            foreach (int listedId in windows.Keys.Where(id => id != 0).Order().ToList())
+            {
+                windows.Remove(listedId);
+                withFullContents.Remove(listedId);
+                closed.Add(listedId);
+            }
+
+            return closed;
         }
 
         /// <summary>
