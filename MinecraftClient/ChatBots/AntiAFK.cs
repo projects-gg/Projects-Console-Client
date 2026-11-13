@@ -1,5 +1,7 @@
 ﻿using System;
-using System.Diagnostics;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using MinecraftClient.Mapping;
 using MinecraftClient.Scripting;
 using Tomlet.Attributes;
@@ -87,9 +89,10 @@ namespace MinecraftClient.ChatBots
             }
         }
 
-        // Pathfinding runs on the client tick thread. With the MoveTo default (5 s per attempt) an unreachable
-        // goal, e.g. right after a teleport or respawn, could block the thread for Walk_Retries x 5 s and the
-        // server would drop the connection with "Timed out". Keep each attempt short and cap the whole run.
+        // The path search runs off the client tick (client 4.2.11): the tick goes on while it searches and the walk starts
+        // on the tick after it ends, as the game's ticks never wait for a search. Before, it ran on the tick and stopped
+        // the client for up to 2 s (Walk_Retries tries of up to 0.5 s each), then ten ticks went at once. Each try stays
+        // short and the whole search is capped, so an unreachable spot (right after a teleport or respawn) ends it soon.
         private static readonly TimeSpan PathfindingAttemptTimeout = TimeSpan.FromMilliseconds(500);
         private static readonly TimeSpan PathfindingBudget = TimeSpan.FromSeconds(2);
 
@@ -97,12 +100,23 @@ namespace MinecraftClient.ChatBots
         private bool previousSneakState = false;
         private readonly Random random = new();
 
+        private readonly Func<Func<Queue<Location>?>, Task<Queue<Location>?>> runSearch;
+        private Task<Queue<Location>?>? walkSearch;
+        private CancellationTokenSource? walkCancel;
+        private Location walkStart;
+
         /// <summary>
         /// This bot moves (and optionally sends a command) every X seconds in order to stay non-afk.
         /// </summary>
-        public AntiAFK()
+        public AntiAFK() : this(null)
+        {
+        }
+
+        /// <summary>The bot, with the way its path search runs (tests: on the caller's thread).</summary>
+        internal AntiAFK(Func<Func<Queue<Location>?>, Task<Queue<Location>?>>? runSearch)
         {
             count = 0;
+            this.runSearch = runSearch ?? (search => Task.Run(search));
         }
 
         public override void Initialize()
@@ -125,11 +139,29 @@ namespace MinecraftClient.ChatBots
 
         public override void Update()
         {
+            // A search started on an earlier turn: the walk (or the turn's other moves) once it ends
+            if (walkSearch is not null)
+            {
+                if (!walkSearch.IsCompleted)
+                    return;
+                Queue<Location>? path = walkSearch.Status == TaskStatus.RanToCompletion ? walkSearch.Result : null;
+                walkSearch = null;
+                walkCancel?.Dispose();
+                walkCancel = null;
+                FinishTurn(StartWalk(path));
+                return;
+            }
+
             if (!Due(IsScreenOpen()))
                 return;
             DoAntiAfkStuff();
             count = 0;
             nextrun = random.Next(Settings.DoubleToTick(Config.Delay.min), Settings.DoubleToTick(Config.Delay.max));
+        }
+
+        public override void OnUnload()
+        {
+            walkCancel?.Cancel();
         }
 
         /// <summary>
@@ -147,51 +179,75 @@ namespace MinecraftClient.ChatBots
 
         private void DoAntiAfkStuff()
         {
-            var isMovementLocked = BotMovementLock.Instance;
-            if (Config.Use_Terrain_Handling && GetTerrainEnabled() && isMovementLocked is { IsLocked: false })
+            if (Config.Use_Terrain_Handling && GetTerrainEnabled() && BotMovementLock.Instance is { IsLocked: false })
             {
-                var currentLocation = GetCurrentLocation();
+                // The goals are drawn here, the paths searched off the tick; the turn ends when the search does
+                Location start = GetCurrentLocation();
+                List<Location> goals = new(Math.Max(0, Config.Walk_Retries));
+                for (int i = 0; i < Config.Walk_Retries; i++)
+                    goals.Add(RandomGoal(start));
 
-                var moved = false;
-                var useAlternativeMethod = false;
-                var triesCounter = 0;
-                var budget = Stopwatch.StartNew();
+                World world = GetWorld();
+                walkStart = start;
+                walkCancel = new CancellationTokenSource(PathfindingBudget);
+                CancellationToken token = walkCancel.Token;
+                walkSearch = runSearch(() => FindWalk(world, start, goals, PathfindingAttemptTimeout, token));
+                return;
+            }
 
-                while (!moved)
-                {
-                    if (triesCounter++ >= Config.Walk_Retries || budget.Elapsed >= PathfindingBudget)
-                    {
-                        useAlternativeMethod = true;
-                        break;
-                    }
+            FinishTurn(walked: false);
+        }
 
-                    var goal = GetRandomLocationWithinRangeXZ(currentLocation, Config.Walk_Range);
+        /// <summary>
+        /// The search, off the tick: the path to the first goal one can be found to, trying them in turn with a short time
+        /// for each; none once the time is up, or when the next goal's chunks are not loaded.
+        /// </summary>
+        internal static Queue<Location>? FindWalk(World world, Location start, IReadOnlyList<Location> goals,
+            TimeSpan attemptTimeout, CancellationToken token)
+        {
+            foreach (Location goal in goals)
+            {
+                if (token.IsCancellationRequested || !Movement.CheckChunkLoading(world, start, goal))
+                    return null;
 
-                    // Prevent getting the same location
-                    while ((currentLocation.X == goal.X) && (currentLocation.Y == goal.Y) &&
-                           (currentLocation.Z == goal.Z))
-                    {
-                        LogToConsole("Same location!, generating new one");
-                        goal = GetRandomLocationWithinRangeXZ(currentLocation, Config.Walk_Range);
-                    }
+                using CancellationTokenSource attempt = CancellationTokenSource.CreateLinkedTokenSource(token);
+                attempt.CancelAfter(attemptTimeout);
+                Queue<Location>? path = Movement.CalculatePath(world, start, goal, allowUnsafe: false, maxOffset: 0,
+                    minOffset: 0, attempt.Token);
+                if (path is not null)
+                    return path;
+            }
 
-                    if (!Movement.CheckChunkLoading(GetWorld(), currentLocation, goal))
-                    {
-                        useAlternativeMethod = true;
-                        break;
-                    }
+            return null;
+        }
 
-                    moved = MoveToLocation(goal, allowUnsafe: false, allowDirectTeleport: false,
-                        timeout: PathfindingAttemptTimeout);
-                }
+        /// <summary>
+        /// Walk the path found, unless the player was moved meanwhile (a teleport, a respawn: the path starts elsewhere)
+        /// or another bot took the movement.
+        /// </summary>
+        private bool StartWalk(Queue<Location>? path)
+        {
+            if (path is null || !GetTerrainEnabled() || BotMovementLock.Instance is { IsLocked: true })
+                return false;
 
-                if (!useAlternativeMethod && Config.Use_Sneak)
-                {
-                    // Solve the case when the bot was closed in 1x2, was sneaking, but then he was freed, this will make him not sneak anymore
-                    previousSneakState = false;
-                    Sneak(false);
-                    return;
-                }
+            Location now = GetCurrentLocation();
+            double dx = now.X - walkStart.X, dz = now.Z - walkStart.Z;
+            if (dx * dx + dz * dz > 1.0 || Math.Abs(now.Y - walkStart.Y) > 1.0)
+                return false;
+
+            Handler.WalkWaypoints(path);
+            return true;
+        }
+
+        /// <summary>The rest of a turn: after a walk only the sneak goes up; otherwise the command and the sneak toggle.</summary>
+        private void FinishTurn(bool walked)
+        {
+            if (walked && Config.Use_Sneak)
+            {
+                // Solve the case when the bot was closed in 1x2, was sneaking, but then he was freed, this will make him not sneak anymore
+                previousSneakState = false;
+                Sneak(false);
+                return;
             }
 
             // An empty command means "move only": sending it would either be dropped or answered with an
@@ -206,6 +262,18 @@ namespace MinecraftClient.ChatBots
             }
 
             count = 0;
+        }
+
+        /// <summary>A random goal in range, never the spot the player stands on.</summary>
+        private Location RandomGoal(Location start)
+        {
+            Location goal = GetRandomLocationWithinRangeXZ(start, Config.Walk_Range);
+            while (start.X == goal.X && start.Y == goal.Y && start.Z == goal.Z)
+            {
+                LogToConsole("Same location!, generating new one");
+                goal = GetRandomLocationWithinRangeXZ(start, Config.Walk_Range);
+            }
+            return goal;
         }
 
         private Location GetRandomLocationWithinRangeXZ(Location currentLocation, int range)
