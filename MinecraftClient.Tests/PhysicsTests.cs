@@ -81,6 +81,26 @@ public sealed class PhysicsTests
     }
 
     [Fact]
+    public void ACrouchingBoxStepsUpUnderALowCeilingWhereAStandingOneCannot()
+    {
+        // The box is the pose's: on a half block under a ceiling 2 above the floor a crouching player's head (1.5) just
+        // fits, so it steps up; a standing one's (1.8) does not, so the half block stops it. Before, the box was 1.8 high
+        // in every pose and the crouching player stopped there too.
+        var colliders = Colliders(new Aabb(-5, -1, -5, 5, 0, 5), new Aabb(1, 0, -5, 2, 0.5, 5), new Aabb(1, 2, -5, 2, 3, 5));
+        var motion = new Vec3d(0.2, -0.0784, 0);
+        Aabb crouching = Aabb.OfSize(0.6, 0, 0, PhysicsConsts.PlayerWidth, PhysicsConsts.PlayerSneakHeight);
+        Aabb standing = Aabb.OfSize(0.6, 0, 0, PhysicsConsts.PlayerWidth, PhysicsConsts.PlayerHeight);
+
+        Vec3d crouched = CollisionDetector.Collide(colliders, crouching, motion, true, PhysicsConsts.StepHeight);
+        Vec3d stood = CollisionDetector.Collide(colliders, standing, motion, true, PhysicsConsts.StepHeight);
+
+        Assert.Equal(0.2, crouched.X);
+        Assert.Equal(0.5, crouched.Y);
+        Assert.Equal(1.0 - standing.MaxX, stood.X);
+        Assert.Equal(0.0, stood.Y);
+    }
+
+    [Fact]
     public void TheStepHeightsAreEveryBottomAndTopWithinAStep()
     {
         var feet = new Aabb(0, 1, 0, 0.6, 2.8, 0.6);
