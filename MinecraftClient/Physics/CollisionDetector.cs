@@ -10,47 +10,51 @@ namespace MinecraftClient.Physics
     /// </summary>
     public static class CollisionDetector
     {
+        private static readonly int[] YxzAxisOrder = { 1, 0, 2 };
+        private static readonly int[] YzxAxisOrder = { 1, 2, 0 };
+
         /// <summary>
         /// Resolve movement with full collision detection including step-up.
         /// This is the main entry point, equivalent to Entity.collide(Vec3).
         /// </summary>
         public static Vec3d Collide(World world, Aabb entityBox, Vec3d movement, bool onGround, float maxUpStep)
         {
+            return Collide(searchBox => CollectBlockColliders(world, searchBox), entityBox, movement, onGround, maxUpStep);
+        }
+
+        /// <summary>
+        /// Entity.collide with the block shapes coming from <paramref name="collectColliders"/> (the world's, or a test's).
+        /// A move blocked sideways while on the ground, or landing, tries the step heights the shapes around offer, lowest
+        /// first, and keeps the first that goes further sideways (Entity.collectCandidateStepUpHeights).
+        /// </summary>
+        internal static Vec3d Collide(Func<Aabb, List<Aabb>> collectColliders, Aabb entityBox, Vec3d movement,
+            bool onGround, float maxUpStep)
+        {
             if (movement.LengthSqr() == 0.0)
                 return movement;
 
-            // Collect block collision shapes in the movement path
-            var colliders = CollectBlockColliders(world, entityBox.ExpandTowards(movement));
-            Vec3d resolved = CollideWithShapes(movement, entityBox, colliders);
+            Vec3d resolved = CollideWithShapes(movement, entityBox, collectColliders(entityBox.ExpandTowards(movement)));
 
             bool blockedX = movement.X != resolved.X;
             bool blockedZ = movement.Z != resolved.Z;
             bool blockedY = movement.Y != resolved.Y;
-            bool hitGroundDuringMove = blockedY && movement.Y < 0.0;
+            bool onGroundAfterCollision = blockedY && movement.Y < 0.0;
 
-            // Step-up logic: if blocked horizontally and on ground or just landed
-            if (maxUpStep > 0.0f && (hitGroundDuringMove || onGround) && (blockedX || blockedZ))
+            if (maxUpStep > 0.0f && (onGroundAfterCollision || onGround) && (blockedX || blockedZ))
             {
-                // Try stepping up
-                Aabb stepBase = hitGroundDuringMove ? entityBox.Move(0, resolved.Y, 0) : entityBox;
-                Aabb expanded = stepBase.ExpandTowards(movement.X, maxUpStep, movement.Z)
-                    .ExpandTowards(0, hitGroundDuringMove ? 0 : -1.0E-5, 0);
+                Aabb groundedBox = onGroundAfterCollision ? entityBox.Move(0, resolved.Y, 0) : entityBox;
+                Aabb stepUpBox = groundedBox.ExpandTowards(movement.X, maxUpStep, movement.Z);
+                if (!onGroundAfterCollision)
+                    stepUpBox = stepUpBox.ExpandTowards(0, -1.0E-5f, 0);
 
-                var stepColliders = CollectBlockColliders(world, expanded);
+                List<Aabb> stepColliders = collectColliders(stepUpBox);
+                float stepHeightToSkip = (float)resolved.Y;
 
-                // Try various step heights
-                float[] candidateHeights = CollectCandidateStepHeights(stepBase, stepColliders, maxUpStep, (float)resolved.Y);
-
-                foreach (float stepY in candidateHeights)
+                foreach (float stepHeight in CollectCandidateStepUpHeights(groundedBox, stepColliders, maxUpStep, stepHeightToSkip))
                 {
-                    Vec3d stepMovement = new Vec3d(movement.X, stepY, movement.Z);
-                    Vec3d stepResolved = CollideWithShapes(stepMovement, stepBase, stepColliders);
-
-                    if (stepResolved.HorizontalDistanceSqr() > resolved.HorizontalDistanceSqr())
-                    {
-                        double yOffset = entityBox.MinY - stepBase.MinY;
-                        return stepResolved.Subtract(0, yOffset, 0);
-                    }
+                    Vec3d stepFromGround = CollideWithShapes(new Vec3d(movement.X, stepHeight, movement.Z), groundedBox, stepColliders);
+                    if (stepFromGround.HorizontalDistanceSqr() > resolved.HorizontalDistanceSqr())
+                        return stepFromGround.Subtract(0, entityBox.MinY - groundedBox.MinY, 0);
                 }
             }
 
@@ -59,17 +63,16 @@ namespace MinecraftClient.Physics
 
         /// <summary>
         /// Collide movement against a list of shapes using axis-separated resolution.
-        /// Matches Entity.collideWithShapes() — processes axes in order of smallest movement first.
+        /// Matches Entity.collideWithShapes() in the order Direction.axisStepOrder gives.
         /// </summary>
-        private static Vec3d CollideWithShapes(Vec3d movement, Aabb entityBox, List<Aabb> colliders)
+        internal static Vec3d CollideWithShapes(Vec3d movement, Aabb entityBox, List<Aabb> colliders)
         {
             if (colliders.Count == 0)
                 return movement;
 
             Vec3d accumulated = Vec3d.Zero;
-            int[] axisOrder = GetAxisStepOrder(movement);
 
-            foreach (int axis in axisOrder)
+            foreach (int axis in GetAxisStepOrder(movement))
             {
                 double dist = movement.Get(axis);
                 if (dist == 0.0) continue;
@@ -82,31 +85,14 @@ namespace MinecraftClient.Physics
         }
 
         /// <summary>
-        /// Get axis processing order: Y first if moving down, otherwise smallest absolute movement first.
-        /// Vanilla uses Direction.axisStepOrder(Vec3) which returns axes sorted by absolute movement.
+        /// The order the axes of a move are resolved in, as Direction.axisStepOrder gives it: always Y first, then the
+        /// horizontal axis the move goes further along (Z when |x| &lt; |z|, else X), then the other. Client 4.2.11:
+        /// before, the client sorted the axes by distance, so a move slower sideways than it falls (sneaking, the first
+        /// steps, a step-up try) went sideways first: off an edge a tick early, or not up a slab the game climbs.
         /// </summary>
-        private static int[] GetAxisStepOrder(Vec3d movement)
+        internal static int[] GetAxisStepOrder(Vec3d movement)
         {
-            double absX = Math.Abs(movement.X);
-            double absY = Math.Abs(movement.Y);
-            double absZ = Math.Abs(movement.Z);
-
-            if (absX > absZ)
-            {
-                if (absZ > absY)
-                    return new[] { 1, 2, 0 }; // Y Z X
-                if (absX > absY)
-                    return new[] { 1, 0, 2 }; // Y X Z
-                return new[] { 0, 1, 2 }; // X Y Z
-            }
-            else
-            {
-                if (absX > absY)
-                    return new[] { 1, 0, 2 }; // Y X Z
-                if (absZ > absY)
-                    return new[] { 1, 2, 0 }; // Y Z X
-                return new[] { 2, 1, 0 }; // Z Y X
-            }
+            return Math.Abs(movement.X) < Math.Abs(movement.Z) ? YzxAxisOrder : YxzAxisOrder;
         }
 
         /// <summary>
@@ -125,8 +111,8 @@ namespace MinecraftClient.Physics
         }
 
         /// <summary>
-        /// Collect all block collision AABBs that overlap the given search area.
-        /// Equivalent to BlockCollisions iterator in vanilla.
+        /// Collect the collision boxes of every block whose shape overlaps the given search area: all of a block's boxes
+        /// when any of them does, as the game takes a block's whole shape (BlockCollisions, Shapes.joinIsNotEmpty).
         /// </summary>
         public static List<Aabb> CollectBlockColliders(World world, Aabb searchBox)
         {
@@ -147,13 +133,7 @@ namespace MinecraftClient.Physics
                     {
                         Block block = world.GetBlock(new Location(bx, by, bz));
                         Aabb[] shapes = BlockShapes.GetShapes(block);
-
-                        foreach (var shape in shapes)
-                        {
-                            Aabb worldShape = shape.Move(bx, by, bz);
-                            if (worldShape.Intersects(searchBox))
-                                result.Add(worldShape);
-                        }
+                        AddShapeIfOverlapping(result, shapes, bx, by, bz, searchBox);
                     }
                 }
             }
@@ -161,27 +141,47 @@ namespace MinecraftClient.Physics
             return result;
         }
 
+        /// <summary>A block's boxes, moved to its position, when any of them overlaps the search area.</summary>
+        internal static void AddShapeIfOverlapping(List<Aabb> result, Aabb[] shapes, int bx, int by, int bz, Aabb searchBox)
+        {
+            foreach (var shape in shapes)
+            {
+                if (!shape.Move(bx, by, bz).Intersects(searchBox))
+                    continue;
+
+                foreach (var part in shapes)
+                    result.Add(part.Move(bx, by, bz));
+                return;
+            }
+        }
+
         /// <summary>
-        /// Collect candidate step-up heights, matching Entity.collectCandidateStepUpHeights().
-        /// Returns sorted distinct step heights between current resolved Y and maxUpStep.
+        /// The step heights a move may climb, as Entity.collectCandidateStepUpHeights finds them: every bottom and top
+        /// of the shapes around, measured from the box's feet, from 0 up to the step height, without the height the move
+        /// already ended at, lowest first; none means no step. Client 4.2.11: before, only the tops above the move's end
+        /// counted, and with none the client still tried the full step height.
         /// </summary>
-        private static float[] CollectCandidateStepHeights(Aabb stepBase, List<Aabb> colliders, float maxUpStep, float currentY)
+        internal static float[] CollectCandidateStepUpHeights(Aabb box, List<Aabb> colliders, float maxStepHeight,
+            float stepHeightToSkip)
         {
             var heights = new SortedSet<float>();
 
             foreach (var collider in colliders)
             {
-                float h = (float)(collider.MaxY - stepBase.MinY);
-                if (h > currentY && h <= maxUpStep)
-                    heights.Add(h);
+                AddCandidateStepUpHeight(heights, (float)(collider.MinY - box.MinY), maxStepHeight, stepHeightToSkip);
+                AddCandidateStepUpHeight(heights, (float)(collider.MaxY - box.MinY), maxStepHeight, stepHeightToSkip);
             }
-
-            if (heights.Count == 0)
-                return new[] { maxUpStep };
 
             var result = new float[heights.Count];
             heights.CopyTo(result);
             return result;
+        }
+
+        private static void AddCandidateStepUpHeight(SortedSet<float> heights, float height, float maxStepHeight,
+            float stepHeightToSkip)
+        {
+            if (!(height < 0.0f) && height != stepHeightToSkip && !(height > maxStepHeight))
+                heights.Add(height);
         }
 
         /// <summary>

@@ -358,6 +358,14 @@ namespace MinecraftClient.Protocol.Handlers
                         // path search, the machine busy) the rest are dropped, not sent in a burst (client 4.2.8:
                         // before, every missed tick went at once, which Grim TimerLimit flags as a sped-up client).
                         long due = (elapsedMilliseconds - nextUpdateDue) / ClientTickIntervalMilliseconds + 1;
+
+                        // The game handles every packet that has come in before it runs a frame's ticks (Minecraft
+                        // .runTick: the queued tasks, then the ticks), so an anticheat's setback and the motion it sends
+                        // right behind it reach the player together. Client 4.2.11: before, the client looked for a due
+                        // tick before each packet, so a tick could move the player between the two (Grim then sends
+                        // the setback again), and after a stall the ticks went before the packets that had waited.
+                        HandleArrivedPackets();
+
                         for (int tick = 0; tick < TicksToRun(due); tick++)
                         {
                             playerKeys.StartTick(); // a window click or close that waited for the keys to be up
@@ -4433,6 +4441,16 @@ namespace MinecraftClient.Protocol.Handlers
         /// <summary>How many of the client ticks due run now: the game's timer runs at most ten in a row.</summary>
         internal static int TicksToRun(long due) => (int)Math.Clamp(due, 0, 10);
 
+        /// <summary>Handle the packets that have come in so far, in order, before the ticks due run.</summary>
+        private void HandleArrivedPackets()
+        {
+            for (int left = packetQueue.Count; left > 0 && packetQueue.TryTake(out var packetInfo); left--)
+            {
+                var (packetId, packetData) = packetInfo;
+                HandlePacket(packetId, packetData);
+            }
+        }
+
         /// <summary>
         /// Whether a move carries a rotation: one is given and it differs from the last one a move sent, as the game
         /// compares its look with its yRotLast and xRotLast (a teleport's answer does not change them).
@@ -5916,6 +5934,9 @@ namespace MinecraftClient.Protocol.Handlers
                 (byte)Config.MCSettings.MainHand);
         }
 
+
+        /// <inheritdoc/>
+        public float YawAsSent(float yaw) => NearestYaw(yaw, LastYaw);
 
         /// <summary>
         /// Send a location update to the server

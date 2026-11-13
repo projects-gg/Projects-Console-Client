@@ -99,63 +99,54 @@ namespace MinecraftClient.Physics
             x >= MinX && x < MaxX && y >= MinY && y < MaxY && z >= MinZ && z < MaxZ;
 
         /// <summary>
-        /// Collide this AABB along a single axis against another AABB.
-        /// Returns the clamped movement distance.
-        /// </summary>
-        /// <summary>
-        /// Clip entity movement along X against a block shape (other).
-        /// Vanilla semantics: VoxelShape.collide(Axis.X, entityBox, movement).
+        /// Clip entity movement along X against a block shape (other), as VoxelShape.collide(Axis.X, entityBox, movement)
+        /// does it, with the game's 1.0E-7 allowance (VoxelShape.collideX): on the two other axes the shape counts only
+        /// when it reaches more than 1.0E-7 into the box (a box resting on a face, or one a rounding has pushed a hair
+        /// into it, slides along), and ahead a shape whose face is up to 1.0E-7 behind the box's still stops it there.
+        /// Client 4.2.11: before, the comparisons were exact, so a box a rounding left a hair inside a wall walked
+        /// through it, and one a hair inside the side of a wall stopped at every block of the wall it slid along.
         /// </summary>
         public double CollideX(Aabb other, double movement)
         {
-            if (other.MaxY <= MinY || other.MinY >= MaxY || other.MaxZ <= MinZ || other.MinZ >= MaxZ)
+            if (!CrossOverlap(MinY, MaxY, other.MinY, other.MaxY) || !CrossOverlap(MinZ, MaxZ, other.MinZ, other.MaxZ))
                 return movement;
-            if (movement > 0.0 && other.MinX >= MaxX)
-            {
-                double d = other.MinX - MaxX;
-                if (d < movement) movement = d;
-            }
-            else if (movement < 0.0 && other.MaxX <= MinX)
-            {
-                double d = other.MaxX - MinX;
-                if (d > movement) movement = d;
-            }
+            if (movement > 0.0 && MaxX - PhysicsConsts.CollisionEpsilon < other.MinX)
+                movement = Math.Min(movement, other.MinX - MaxX);
+            else if (movement < 0.0 && MinX + PhysicsConsts.CollisionEpsilon >= other.MaxX)
+                movement = Math.Max(movement, other.MaxX - MinX);
             return movement;
         }
 
+        /// <summary>Clip entity movement along Y against a block shape, as <see cref="CollideX"/> does along X.</summary>
         public double CollideY(Aabb other, double movement)
         {
-            if (other.MaxX <= MinX || other.MinX >= MaxX || other.MaxZ <= MinZ || other.MinZ >= MaxZ)
+            if (!CrossOverlap(MinX, MaxX, other.MinX, other.MaxX) || !CrossOverlap(MinZ, MaxZ, other.MinZ, other.MaxZ))
                 return movement;
-            if (movement > 0.0 && other.MinY >= MaxY)
-            {
-                double d = other.MinY - MaxY;
-                if (d < movement) movement = d;
-            }
-            else if (movement < 0.0 && other.MaxY <= MinY)
-            {
-                double d = other.MaxY - MinY;
-                if (d > movement) movement = d;
-            }
+            if (movement > 0.0 && MaxY - PhysicsConsts.CollisionEpsilon < other.MinY)
+                movement = Math.Min(movement, other.MinY - MaxY);
+            else if (movement < 0.0 && MinY + PhysicsConsts.CollisionEpsilon >= other.MaxY)
+                movement = Math.Max(movement, other.MaxY - MinY);
             return movement;
         }
 
+        /// <summary>Clip entity movement along Z against a block shape, as <see cref="CollideX"/> does along X.</summary>
         public double CollideZ(Aabb other, double movement)
         {
-            if (other.MaxX <= MinX || other.MinX >= MaxX || other.MaxY <= MinY || other.MinY >= MaxY)
+            if (!CrossOverlap(MinX, MaxX, other.MinX, other.MaxX) || !CrossOverlap(MinY, MaxY, other.MinY, other.MaxY))
                 return movement;
-            if (movement > 0.0 && other.MinZ >= MaxZ)
-            {
-                double d = other.MinZ - MaxZ;
-                if (d < movement) movement = d;
-            }
-            else if (movement < 0.0 && other.MaxZ <= MinZ)
-            {
-                double d = other.MaxZ - MinZ;
-                if (d > movement) movement = d;
-            }
+            if (movement > 0.0 && MaxZ - PhysicsConsts.CollisionEpsilon < other.MinZ)
+                movement = Math.Min(movement, other.MinZ - MaxZ);
+            else if (movement < 0.0 && MinZ + PhysicsConsts.CollisionEpsilon >= other.MaxZ)
+                movement = Math.Max(movement, other.MaxZ - MinZ);
             return movement;
         }
+
+        /// <summary>
+        /// Whether a shape spanning [shapeMin, shapeMax] on a crossing axis counts against a box spanning [boxMin, boxMax]:
+        /// VoxelShape.collideX's findIndex(min + 1.0E-7) and findIndex(max - 1.0E-7) bounds.
+        /// </summary>
+        private static bool CrossOverlap(double boxMin, double boxMax, double shapeMin, double shapeMax) =>
+            boxMin + PhysicsConsts.CollisionEpsilon < shapeMax && boxMax - PhysicsConsts.CollisionEpsilon >= shapeMin;
 
         /// <summary>
         /// Collide along an axis (0=X, 1=Y, 2=Z) against another AABB

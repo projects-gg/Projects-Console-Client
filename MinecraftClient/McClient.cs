@@ -773,8 +773,13 @@ namespace MinecraftClient
                     // Apply movement input
                     playerPhysics.ApplyInput(physicsInput);
 
-                    // Run one physics tick
+                    // Run one physics tick. The game turns the walk by the rotation it sends, which goes on past 360°
+                    // (the client sends it the short way from the server's yaw, 4.2.8): the tick moves with that same
+                    // value, or the game's sine table can be a step off the client's (client 4.2.11).
+                    float lookYaw = playerPhysics.Yaw;
+                    playerPhysics.Yaw = handler.YawAsSent(lookYaw);
                     playerPhysics.Tick(world);
+                    playerPhysics.Yaw = lookYaw;
 
                     // Sync back to MCC location
                     location = new Location(

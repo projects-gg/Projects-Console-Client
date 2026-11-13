@@ -89,14 +89,20 @@ namespace MinecraftClient.Physics
         /// </summary>
         public void ApplyInput(MovementInput input)
         {
+            // LocalPlayer.aiStep works out whether the player crouches before it reads this tick's keys, so the sneak
+            // slowdown follows the sneak key a tick late, both ways, while the edge back-off follows it at once
+            // (isStayingOnGroundSurface reads the new key). Client 4.2.11: before, the slowdown came and went with the key,
+            // so a walk started in the tick the sneak key went up (AntiAFK) went a tick too fast for an anticheat.
+            bool crouching = Sneaking && !CreativeFlying;
+
             var (rawXxa, rawZza) = input.GetMoveVector();
 
             // Scale by INPUT_FRICTION (0.98) — this matches LocalPlayer.modifyInput
             rawXxa *= PhysicsConsts.InputFriction;
             rawZza *= PhysicsConsts.InputFriction;
 
-            // Sneak slowdown
-            if (input.Sneak)
+            // Sneak slowdown (LocalPlayer.isMovingSlowly)
+            if (crouching)
             {
                 rawXxa *= 0.3f;
                 rawZza *= 0.3f;
@@ -165,11 +171,11 @@ namespace MinecraftClient.Physics
 
             if (Sprinting)
             {
-                float yawRad = Yaw * (MathF.PI / 180.0f);
+                float yawRad = VanillaMath.ToRadians(Yaw);
                 DeltaMovement = DeltaMovement.Add(
-                    -MathF.Sin(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost,
+                    -VanillaMath.Sin(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost,
                     0,
-                    MathF.Cos(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost);
+                    VanillaMath.Cos(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost);
             }
         }
 
@@ -312,17 +318,19 @@ namespace MinecraftClient.Physics
         }
 
         /// <summary>
-        /// Rotate input by yaw and scale by speed. Equivalent to Entity.getInputVector().
+        /// Rotate input by yaw and scale by speed. Equivalent to Entity.getInputVector(), with the game's sine table
+        /// (client 4.2.11: before, the exact sine, a few millionths of a block off the game's every tick).
         /// </summary>
-        private static Vec3d GetInputVector(Vec3d input, float speed, float yaw)
+        internal static Vec3d GetInputVector(Vec3d input, float speed, float yaw)
         {
             double lenSqr = input.LengthSqr();
             if (lenSqr < 1.0E-7)
                 return Vec3d.Zero;
 
             Vec3d scaled = (lenSqr > 1.0 ? input.Normalize() : input).Scale(speed);
-            float sinYaw = MathF.Sin(yaw * (MathF.PI / 180.0f));
-            float cosYaw = MathF.Cos(yaw * (MathF.PI / 180.0f));
+            float yawRad = VanillaMath.ToRadians(yaw);
+            float sinYaw = VanillaMath.Sin(yawRad);
+            float cosYaw = VanillaMath.Cos(yawRad);
 
             return new Vec3d(
                 scaled.X * cosYaw - scaled.Z * sinYaw,
@@ -344,8 +352,7 @@ namespace MinecraftClient.Physics
             }
 
             // Sneak edge back-off
-            if (Sneaking && OnGround)
-                movement = MaybeBackOffFromEdge(world, movement);
+            movement = MaybeBackOffFromEdge(world, movement);
 
             Aabb box = GetBoundingBox();
             Vec3d resolved = CollisionDetector.Collide(world, box, movement, OnGround, PhysicsConsts.StepHeight);
@@ -394,37 +401,68 @@ namespace MinecraftClient.Physics
 
         /// <summary>
         /// Sneak edge detection: prevent walking off edges while sneaking.
-        /// Equivalent to Player.maybeBackOffFromEdge(Vec3, MoverType).
+        /// Equivalent to Player.maybeBackOffFromEdge(Vec3, MoverType) from 1.21.2: with the sneak key down, not flying,
+        /// not moving up and above ground, each horizontal part of the move shrinks by 0.05 until the player could no longer
+        /// fall a step height there. Client 4.2.11: before, the client only did it on the ground and tested its whole box
+        /// moved a block down, which counts a block beside the player as ground; the game (and Grim, which replays it)
+        /// tests the slab under the feet, so the client walked off edges the game stops at, or stopped where it walks on.
         /// </summary>
         private Vec3d MaybeBackOffFromEdge(World world, Vec3d movement)
         {
-            if (movement.Y > 0) return movement;
+            float maxDownStep = PhysicsConsts.StepHeight;
+            if (CreativeFlying || movement.Y > 0.0 || !Sneaking || !IsAboveGround(world, maxDownStep))
+                return movement;
 
-            double step = 0.05;
             double dx = movement.X;
             double dz = movement.Z;
-            Aabb box = GetBoundingBox();
+            double stepX = Math.Sign(dx) * 0.05;
+            double stepZ = Math.Sign(dz) * 0.05;
 
-            while (dx != 0.0 && CollisionDetector.CollectBlockColliders(world,
-                box.Move(dx, -1.0, 0)).Count == 0)
+            while (dx != 0.0 && CanFallAtLeast(world, dx, 0.0, maxDownStep))
             {
-                dx = dx < step && dx >= -step ? 0.0 : (dx > 0.0 ? dx - step : dx + step);
+                if (Math.Abs(dx) <= 0.05)
+                {
+                    dx = 0.0;
+                    break;
+                }
+                dx -= stepX;
             }
 
-            while (dz != 0.0 && CollisionDetector.CollectBlockColliders(world,
-                box.Move(0, -1.0, dz)).Count == 0)
+            while (dz != 0.0 && CanFallAtLeast(world, 0.0, dz, maxDownStep))
             {
-                dz = dz < step && dz >= -step ? 0.0 : (dz > 0.0 ? dz - step : dz + step);
+                if (Math.Abs(dz) <= 0.05)
+                {
+                    dz = 0.0;
+                    break;
+                }
+                dz -= stepZ;
             }
 
-            while (dx != 0.0 && dz != 0.0 && CollisionDetector.CollectBlockColliders(world,
-                box.Move(dx, -1.0, dz)).Count == 0)
+            while (dx != 0.0 && dz != 0.0 && CanFallAtLeast(world, dx, dz, maxDownStep))
             {
-                dx = dx < step && dx >= -step ? 0.0 : (dx > 0.0 ? dx - step : dx + step);
-                dz = dz < step && dz >= -step ? 0.0 : (dz > 0.0 ? dz - step : dz + step);
+                dx = Math.Abs(dx) <= 0.05 ? 0.0 : dx - stepX;
+                dz = Math.Abs(dz) <= 0.05 ? 0.0 : dz - stepZ;
             }
 
             return new Vec3d(dx, movement.Y, dz);
+        }
+
+        /// <summary>Player.isAboveGround: on the ground, or a fall shorter than a step with ground within the rest of it.</summary>
+        private bool IsAboveGround(World world, float maxDownStep)
+        {
+            return OnGround || (FallDistance < maxDownStep && !CanFallAtLeast(world, 0.0, 0.0, maxDownStep - FallDistance));
+        }
+
+        /// <summary>
+        /// Player.canFallAtLeast: nothing to stand on in the slab under the feet, moved by (dx, dz), down to the given
+        /// height; the slab is pulled in by 1.0E-7 on every side but the top, so a block only touching it does not count.
+        /// </summary>
+        private bool CanFallAtLeast(World world, double dx, double dz, double minHeight)
+        {
+            Aabb box = GetBoundingBox();
+            return CollisionDetector.NoCollision(world, new Aabb(
+                box.MinX + 1.0E-7 + dx, box.MinY - minHeight - 1.0E-7, box.MinZ + 1.0E-7 + dz,
+                box.MaxX - 1.0E-7 + dx, box.MinY, box.MaxZ - 1.0E-7 + dz));
         }
 
         /// <summary>

@@ -908,6 +908,13 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   inventory at 9-35, the armor at 5-8 (head to feet), the off hand at 45, and in an open window's player part too.
   Before, the client wrote the index as a slot: an item put back in the hotbar showed in the crafting grid or an armor
   slot (`inv` slots 0-8).
+- Since 4.2.11, with terrain and movements: the physics moves as the game's does, so an anticheat that replays the
+  move (Grim) predicts the very same one. A move resolves its fall first and then the longer way sideways, so a slow
+  step does not fall off an edge a tick early and a walk climbs a half block, a stair or a path edge as the game does;
+  the sneak key holds the player back at an edge the way the game tests it, and slows it down a tick after it goes down
+  (and up); a walk turns by the game's sine table and the yaw the move sends; and the packets that came in are handled
+  before the ticks due. Before, an account walking into a wall or an edge drew clusters of Simulation flags, and a
+  walk could stop at a half block the game climbs.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);
