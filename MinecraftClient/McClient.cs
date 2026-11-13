@@ -128,6 +128,7 @@ namespace MinecraftClient
         public bool IsSneaking { get; set; } = false;
         private bool isUnderSlab = false;
         private bool sneakKeyDown; // the sneak key the last entity action pressed (any bot, the slab overhead, a command)
+        private bool sprintKeyDown; // the sprint key a bot holds (MCP); the physics decides when the player sprints
         private DateTime nextSneakingUpdate = DateTime.Now;
 
         // The agent bridge's movement (docs/agent-bridge.md, version 3): set only by the bridge, inert otherwise.
@@ -586,6 +587,7 @@ namespace MinecraftClient
             physicsInitialized = false;
             isUnderSlab = false;
             sneakKeyDown = false;
+            sprintKeyDown = false;
             path = null;
             pathTarget = null;
             _yaw = null;
@@ -728,6 +730,7 @@ namespace MinecraftClient
                         playerPhysics.SetPosition(location.X, location.Y, location.Z);
                         playerPhysics.Yaw = playerYaw;
                         playerPhysics.Pitch = playerPitch;
+                        playerPhysics.SquareMovementInput = protocolversion >= Protocol18Handler.MC_1_21_5_Version;
                         physicsInitialized = true;
                     }
 
@@ -745,6 +748,11 @@ namespace MinecraftClient
                         // Navigate pathfinding: set input based on current path
                         UpdatePathfindingInput();
                     }
+
+                    // The sprint key a bot holds (MCP's sprint): the physics sprints when the player can, as with the
+                    // game's sprint key, and the server hears of sprinting, not of the key (client 4.2.11).
+                    if (sprintKeyDown && !screenOpen)
+                        physicsInput.Sprint = true;
 
                     // The sneak key the server was told about (AntiAFK, a slab overhead, the sneak command) crouches the
                     // player as the game's shift key does: slower, never off an edge (client 4.2.8: before, the server
@@ -769,6 +777,11 @@ namespace MinecraftClient
 
                     // Update environment flags (water, lava, climbable)
                     playerPhysics.UpdateEnvironment(world);
+
+                    // What sprinting needs (LocalPlayer.isSprintingPossible): food above 6 (or flight allowed), no blindness
+                    playerPhysics.FoodLevel = playerFoodSaturation;
+                    playerPhysics.MayFly = gamemode is 1 or 3;
+                    playerPhysics.Blind = playerEffects.ContainsKey(Effects.Blindness);
 
                     // Apply movement input
                     playerPhysics.ApplyInput(physicsInput);
@@ -798,6 +811,11 @@ namespace MinecraftClient
                     // sends them before its move (client 4.2.8: before, a walk never pressed its forward or jump key).
                     handler.SetMovementKeys(physicsInput.Forward, physicsInput.Back, physicsInput.Left,
                         physicsInput.Right, physicsInput.Jump, physicsInput.Sneak, physicsInput.Sprint);
+
+                    // Then a change of sprinting, as the game sends it before its move (sendIsSprintingIfNeeded); only a
+                    // change goes (PlayerKeys).
+                    handler.SendEntityAction(playerEntityID, (int)(playerPhysics.Sprinting
+                        ? EntityActionType.StartSprinting : EntityActionType.StopSprinting));
 
                     // Send position packet
                     handler.SendLocationUpdate(location, playerPhysics.OnGround, playerPhysics.HorizontalCollision, playerYaw, playerPitch);
@@ -3803,7 +3821,7 @@ namespace MinecraftClient
             // last server's ground and sent that position to the new server, whose anticheat set the player back at once).
             if (terrainAndMovementsEnabled)
                 world.Clear();
-            AwaitServerPosition();
+            AwaitServerPosition(AttributesKept.None);
 
             // Every join, a proxy's server switch too, shows the game's world loading screen: an open dialog (one of the
             // configuration, or the old server's) closes, reported before the bots hear of the join.
@@ -3823,13 +3841,15 @@ namespace MinecraftClient
         /// </summary>
         public void OnConfigurationStart()
         {
-            AwaitServerPosition();
+            AwaitServerPosition(AttributesKept.None);
         }
 
         /// <summary>
         /// Called when the player respawns, which happens on login, respawn and world change.
         /// </summary>
-        public void OnRespawn()
+        /// <param name="keepAttributeModifiers">The server's Respawn keeps the attribute modifiers (a change of
+        /// dimension); without it the new player keeps only the base values (a respawn after death).</param>
+        public void OnRespawn(bool keepAttributeModifiers)
         {
             // The game shows its world loading screen at every respawn: an open dialog closes.
             CloseDialogScreens();
@@ -3846,7 +3866,7 @@ namespace MinecraftClient
             {
                 world.Clear();
             }
-            AwaitServerPosition();
+            AwaitServerPosition(keepAttributeModifiers ? AttributesKept.All : AttributesKept.Bases);
 
             entities.Clear();
             ClearKnownSigns();
@@ -3857,9 +3877,13 @@ namespace MinecraftClient
         /// <summary>
         /// A join or a respawn puts the game's player in a new world: it does not move (no physics, no move sent) until
         /// the server places it (Synchronize Player Position) and the chunk it stands in is loaded; a walk does not go on
-        /// into the new world (client 4.2.8).
+        /// into the new world (client 4.2.8). The game's new player is at rest, standing and not sprinting (client 4.2.11:
+        /// before, the last world's motion went on into the new one), with <paramref name="attributesKept"/> of the last
+        /// one's attributes: a join's player has the defaults until the server sends its own, a respawn after death keeps
+        /// the base values only (a Swift Sneak or Speed modifier goes with the dead player; the server sends the new
+        /// player's attributes only when they change).
         /// </summary>
-        private void AwaitServerPosition()
+        private void AwaitServerPosition(AttributesKept attributesKept)
         {
             lock (locationLock)
             {
@@ -3869,7 +3893,44 @@ namespace MinecraftClient
                 pathTarget = null;
                 _yaw = null;
                 _pitch = null;
+                playerPhysics.ResetPlayer(attributesKept);
             }
+        }
+
+        /// <summary>
+        /// The player's own attributes the server sent (Update Attributes): its movement and sneaking speeds go to the
+        /// physics as they are, the server's modifiers included (Swift Sneak, a Speed effect), as the game takes them
+        /// (client 4.2.11: before, the physics walked at 0.1 and sneaked at 0.3 whatever the server said).
+        /// </summary>
+        public void OnPlayerAttributes(IReadOnlyList<PlayerAttributeSnapshot> attributes)
+        {
+            lock (locationLock)
+            {
+                foreach (var attribute in attributes)
+                {
+                    PlayerAttribute target = attribute.Kind == PlayerAttributeKind.SneakingSpeed
+                        ? playerPhysics.SneakingSpeedAttribute
+                        : playerPhysics.MovementSpeedAttribute;
+                    target.SetFromServer(attribute.Base, attribute.Modifiers);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Hold or release the sprint key (MCP): with terrain and movements the physics sprints when the player can, as
+        /// the game does with its sprint key, and the server hears when sprinting starts or stops; without them the
+        /// sprint command goes as before.
+        /// </summary>
+        public bool SetSprintKey(bool on)
+        {
+            if (!terrainAndMovementsEnabled)
+                return SendEntityAction(on ? EntityActionType.StartSprinting : EntityActionType.StopSprinting);
+
+            return InvokeOnMainThread(() =>
+            {
+                sprintKeyDown = on;
+                return true;
+            });
         }
 
         /// <summary>

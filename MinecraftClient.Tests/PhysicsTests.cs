@@ -156,6 +156,135 @@ public sealed class PhysicsTests
         Assert.Equal(0.98f, physics.Zza);
     }
 
+    [Fact]
+    public void ADiagonalReachesTheUnitSquareFrom1215()
+    {
+        // LocalPlayer.modifyInputSpeedForSquareMovement (1.21.5+): a normalized diagonal stretched to the square's corner,
+        // so each axis gets what a single key gets while sneaking, and the full length while walking. Before, the client
+        // normalized and scaled it to 0.98 (2% slow) and 0.294 (sneaking: 30% slow on each axis).
+        Assert.Equal((0.70710671f, 0.70710671f), PlayerPhysics.ModifyInput(true, 1f, 1f, false, 0.3f));
+        Assert.Equal((0.98f * 0.3f, 0.98f * 0.3f), PlayerPhysics.ModifyInput(true, 1f, 1f, true, 0.3f));
+        Assert.Equal((0f, 0.98f), PlayerPhysics.ModifyInput(true, 0f, 1f, false, 0.3f));
+        Assert.Equal((0f, 0f), PlayerPhysics.ModifyInput(true, 0f, 0f, true, 0.3f));
+
+        // Before 1.21.5 the keys go as they are (the walk's input vector is normalized later, when longer than 1)
+        Assert.Equal((0.98f, 0.98f), PlayerPhysics.ModifyInput(false, 1f, 1f, false, 0.3f));
+        Assert.Equal((-0.98f * 0.3f, 0.98f * 0.3f), PlayerPhysics.ModifyInput(false, -1f, 1f, true, 0.3f));
+    }
+
+    [Fact]
+    public void SwiftSneakSpeedsTheCrouchingWalk()
+    {
+        // The server's sneaking speed (Swift Sneak III: +0.45 on 0.3), as the game takes it from Update Attributes
+        var physics = new PlayerPhysics();
+        physics.SneakingSpeedAttribute.SetFromServer(0.3,
+            [new PlayerAttribute.Modifier("minecraft:enchantment.swift_sneak/legs", 0.45000001788139343, 0)]);
+        var sneakWalk = new MovementInput { Forward = true, Sneak = true };
+
+        physics.ApplyInput(sneakWalk);
+        physics.ApplyInput(sneakWalk);
+
+        Assert.Equal(0.98f * 0.75f, physics.Zza);
+    }
+
+    [Fact]
+    public void AnAttributeIsWorkedOutAsTheGameDoes()
+    {
+        var speed = new PlayerAttribute(0.1f, 0.0, 1024.0);
+        speed.SetFromServer(0.1f, [
+            new PlayerAttribute.Modifier("a", 0.02, 0),
+            new PlayerAttribute.Modifier("b", 0.2, 1),
+            new PlayerAttribute.Modifier("c", 0.3, 2),
+        ]);
+        double added = (double)0.1f + 0.02;
+        Assert.Equal((added + added * 0.2) * 1.3, speed.Value);
+
+        // Out of range values are clamped (RangedAttribute): the sneaking speed is at most 1
+        var sneaking = new PlayerAttribute(0.3, 0.0, 1.0);
+        sneaking.SetFromServer(0.3, [new PlayerAttribute.Modifier("x", 2.0, 0)]);
+        Assert.Equal(1.0, sneaking.Value);
+
+        // The server's modifiers replace the client's own, its sprint modifier too (handleUpdateAttributes)
+        var physics = new PlayerPhysics();
+        physics.SetSprinting(true);
+        Assert.Equal((float)((double)0.1f * (1.0 + 0.3f)), physics.MovementSpeed);
+        physics.MovementSpeedAttribute.SetFromServer(0.1f, []);
+        Assert.Equal(0.1f, physics.MovementSpeed);
+    }
+
+    [Theory]
+    [InlineData(AttributesKept.None, 0.3, 0.1f)]
+    [InlineData(AttributesKept.Bases, 0.4, 0.1f)]
+    [InlineData(AttributesKept.All, 0.85, 0.12f)]
+    public void ANewPlayerKeepsTheAttributesAsTheGameDoes(AttributesKept kept, double sneaking, float movement)
+    {
+        // A join has the defaults; a respawn after death keeps the bases, its modifiers go with the dead player
+        // (assignBaseValues: the Swift Sneak and Speed below); a change of dimension keeps them (assignAllValues)
+        var physics = new PlayerPhysics();
+        physics.SneakingSpeedAttribute.SetFromServer(0.4, [
+            new PlayerAttribute.Modifier("minecraft:enchantment.swift_sneak/legs", 0.45, 0),
+        ]);
+        physics.MovementSpeedAttribute.SetFromServer(0.1f, [
+            new PlayerAttribute.Modifier("minecraft:effect.speed", 0.2, 2),
+        ]);
+        physics.SetSprinting(true);
+
+        physics.ResetPlayer(kept);
+
+        Assert.Equal(sneaking, physics.SneakingSpeedAttribute.Value, 1e-12);
+        Assert.Equal(movement, physics.MovementSpeed, 1e-6f);
+        Assert.False(physics.Sprinting);
+    }
+
+    [Fact]
+    public void SprintingStartsWithTheKeyAndStopsAsInTheGame()
+    {
+        var physics = new PlayerPhysics();
+        var sprintWalk = new MovementInput { Forward = true, Sprint = true };
+        var walk = new MovementInput { Forward = true };
+
+        physics.ApplyInput(sprintWalk);
+        Assert.True(physics.Sprinting);
+        Assert.Equal((float)((double)0.1f * (1.0 + 0.3f)), physics.MovementSpeed);
+
+        physics.ApplyInput(walk); // releasing the key alone does not stop it
+        Assert.True(physics.Sprinting);
+
+        physics.HorizontalCollision = true; // a wall hit at a small angle: it goes on
+        physics.MinorHorizontalCollision = true;
+        physics.ApplyInput(walk);
+        Assert.True(physics.Sprinting);
+
+        physics.MinorHorizontalCollision = false; // a wall hit straight on stops it
+        physics.ApplyInput(walk);
+        Assert.False(physics.Sprinting);
+        Assert.Equal(0.1f, physics.MovementSpeed);
+
+        physics.HorizontalCollision = false;
+        physics.FoodLevel = 6; // hungry: no sprinting
+        physics.ApplyInput(sprintWalk);
+        Assert.False(physics.Sprinting);
+
+        physics.FoodLevel = 20;
+        physics.ApplyInput(new MovementInput { Sprint = true }); // no forward key
+        Assert.False(physics.Sprinting);
+
+        physics.ApplyInput(new MovementInput { Forward = true, Sneak = true }); // crouching from the next tick
+        physics.ApplyInput(new MovementInput { Forward = true, Sprint = true, Sneak = true }); // crouching: no start
+        Assert.False(physics.Sprinting);
+    }
+
+    [Theory]
+    // yaw, the move after the wall, minor (within 8 degrees of where the keys push)
+    [InlineData(0f, 0.0001, 0.2, true)] // nearly straight on: the wall in another axis barely changed the way
+    [InlineData(0f, 0.2, 0.0, false)] // pushed along the wall at a right angle
+    [InlineData(0f, 0.01, 0.2, true)] // about 3 degrees off
+    [InlineData(0f, 0.05, 0.2, false)] // about 14 degrees off
+    public void AMinorCollisionIsWithinEightDegrees(float yaw, double x, double z, bool minor)
+    {
+        Assert.Equal(minor, PlayerPhysics.IsHorizontalCollisionMinor(yaw, 0f, 0.98f, new Vec3d(x, 0, z)));
+    }
+
     private static Func<Aabb, List<Aabb>> Colliders(params Aabb[] shapes) =>
         searchBox => shapes.Where(shape => shape.Intersects(searchBox)).ToList();
 }
@@ -220,6 +349,44 @@ public sealed class PhysicsWorldTests : IDisposable
         Assert.Equal(1.45, physics.Position.X, 9);
     }
 
+    [Fact]
+    public void TheSneakKeyCrouchesThePoseAtTheTicksEnd()
+    {
+        // Player.updatePlayerPose runs after the move: the box is 1.5 high from the tick after the key goes down
+        World world = WorldWithStone((0, 0, 0));
+        var physics = StandingAt(0.5, 1.0, 0.5, Vec3d.Zero);
+
+        physics.ApplyInput(new MovementInput { Sneak = true });
+        Assert.False(physics.CrouchPose);
+        physics.Tick(world);
+        Assert.True(physics.CrouchPose);
+        Assert.Equal((double)1.5f, physics.GetBoundingBox().YSize);
+
+        physics.ApplyInput(new MovementInput());
+        physics.Tick(world);
+        Assert.False(physics.CrouchPose);
+    }
+
+    [Fact]
+    public void APlayerUnderALowCeilingCrouchesWithoutTheKey()
+    {
+        // 1.5 between the feet and the ceiling: the standing box does not fit, the crouching one does, so the game
+        // crouches the player and slows its walk as crouching (LocalPlayer.crouching: it cannot stand). Before, the box
+        // stayed 1.8 high and the walk at full speed.
+        World world = WorldWithStone((0, 2, 0));
+        var physics = new PlayerPhysics();
+        physics.SetPosition(0.5, 0.5, 0.5);
+
+        physics.ApplyInput(new MovementInput());
+        physics.Tick(world);
+        Assert.True(physics.CrouchPose);
+
+        physics.UpdateEnvironment(world);
+        physics.ApplyInput(new MovementInput { Forward = true });
+        Assert.True(physics.Crouching);
+        Assert.Equal(0.98f * 0.3f, physics.Zza);
+    }
+
     private static PlayerPhysics StandingAt(double x, double y, double z, Vec3d motion)
     {
         var physics = new PlayerPhysics();
@@ -229,7 +396,8 @@ public sealed class PhysicsWorldTests : IDisposable
         return physics;
     }
 
-    private static World WorldWithStone(params (int X, int Y, int Z)[] blocks)
+    /// <summary>A world of stone blocks (the 1.12 palette's stone: a full block) in loaded chunks.</summary>
+    internal static World WorldWithStone(params (int X, int Y, int Z)[] blocks)
     {
         var world = new World();
         foreach (var (x, y, z) in blocks)
