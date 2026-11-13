@@ -94,6 +94,14 @@ namespace MinecraftClient.Protocol
         bool SendLocationUpdate(Location location, bool onGround, bool horizontalCollision, float? yaw, float? pitch);
 
         /// <summary>
+        /// The yaw a move with this look carries to the server (a version may turn it the short way from the yaw the
+        /// server knows). The physics turns the tick's walk by this same value, as the game moves by the rotation it sends.
+        /// </summary>
+        /// <param name="yaw">The look the client works out</param>
+        /// <returns>The yaw <see cref="SendLocationUpdate"/> sends for it now</returns>
+        float YawAsSent(float yaw) => yaw;
+
+        /// <summary>
         /// Send a plugin channel packet to the server.
         /// </summary>
         /// <see href="http://dinnerbone.com/blog/2012/01/13/minecraft-plugin-channels-messaging/" />

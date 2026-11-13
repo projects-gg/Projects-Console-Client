@@ -17,6 +17,7 @@ using MinecraftClient.Logger;
 using MinecraftClient.Mapping;
 using MinecraftClient.Mapping.BlockPalettes;
 using MinecraftClient.Mapping.EntityPalettes;
+using MinecraftClient.Physics;
 using MinecraftClient.Protocol.Handlers.Forge;
 using MinecraftClient.Protocol.Handlers.packet.s2c;
 using MinecraftClient.Protocol.Handlers.PacketPalettes;
@@ -358,6 +359,14 @@ namespace MinecraftClient.Protocol.Handlers
                         // path search, the machine busy) the rest are dropped, not sent in a burst (client 4.2.8:
                         // before, every missed tick went at once, which Grim TimerLimit flags as a sped-up client).
                         long due = (elapsedMilliseconds - nextUpdateDue) / ClientTickIntervalMilliseconds + 1;
+
+                        // The game handles every packet that has come in before it runs a frame's ticks (Minecraft
+                        // .runTick: the queued tasks, then the ticks), so an anticheat's setback and the motion it sends
+                        // right behind it reach the player together. Client 4.2.11: before, the client looked for a due
+                        // tick before each packet, so a tick could move the player between the two (Grim then sends
+                        // the setback again), and after a stall the ticks went before the packets that had waited.
+                        HandleArrivedPackets();
+
                         for (int tick = 0; tick < TicksToRun(due); tick++)
                         {
                             playerKeys.StartTick(); // a window click or close that waited for the keys to be up
@@ -1403,6 +1412,7 @@ namespace MinecraftClient.Protocol.Handlers
                     break;
                 case PacketTypesIn.StartConfiguration:
                     SetCurrentState(CurrentState.Configuration);
+                    handler.OnConfigurationStart(); // the game's player leaves the world until the next join
                     SendAcknowledgeConfiguration();
                     break;
                 case PacketTypesIn.HideMessage:
@@ -1580,6 +1590,7 @@ namespace MinecraftClient.Protocol.Handlers
                 case PacketTypesIn.Respawn:
                     string? dimensionTypeNameRespawn = null;
                     Dictionary<string, object>? dimensionTypeRespawn = null;
+                    byte dataKept = 0; // 1 the attribute modifiers, 2 the entity data (before 1.19.3 a bool for both)
 
                     if (protocolVersion >= MC_1_16_Version)
                     {
@@ -1658,7 +1669,7 @@ namespace MinecraftClient.Protocol.Handlers
                         dataTypes.ReadNextBool(packetData); // Is Flat - 1.16 and above
 
                         if (protocolVersion < MC_1_20_2_Version)
-                            dataTypes.ReadNextBool(packetData); // Copy metadata (Data Kept) - 1.16 - 1.20.2
+                            dataKept = dataTypes.ReadNextByte(packetData); // Copy metadata (Data Kept) - 1.16 - 1.20.2
                     }
 
                     if (protocolVersion >= MC_1_19_Version)
@@ -1674,10 +1685,10 @@ namespace MinecraftClient.Protocol.Handlers
                         dataTypes.ReadNextVarInt(packetData); // Portal Cooldown
 
                     if (protocolVersion >= MC_1_20_2_Version)
-                        dataTypes.ReadNextBool(packetData); // Copy metadata (Data Kept) - 1.20.2 and above
+                        dataKept = dataTypes.ReadNextByte(packetData); // Copy metadata (Data Kept) - 1.20.2 and above
 
                     playerKeys.NewPlayer(); // The game's new player has sent no key yet: the held keys go again
-                    handler.OnRespawn();
+                    handler.OnRespawn(keepAttributeModifiers: (dataKept & 1) != 0);
                     break;
                 case PacketTypesIn.PlayerPositionAndLook:
                     {
@@ -2915,31 +2926,46 @@ namespace MinecraftClient.Protocol.Handlers
 
                     break;
                 case PacketTypesIn.EntityProperties:
-                    if (handler.GetEntityHandlingEnabled())
                     {
+                        // The player's own attributes go to the physics (its movement and sneaking speed), with entity
+                        // handling off too (client 4.2.11); other entities' only with entity handling.
+                        bool entityHandling = handler.GetEntityHandlingEnabled();
+                        if (!entityHandling && !handler.GetTerrainEnabled())
+                            break;
+
                         var entityId = dataTypes.ReadNextVarInt(packetData);
+                        bool ownAttributes = entityId == ownEntityId && handler.GetTerrainEnabled();
+                        if (!ownAttributes && !entityHandling)
+                            break;
+
                         var numberOfProperties = protocolVersion >= MC_1_17_Version
                             ? dataTypes.ReadNextVarInt(packetData)
                             : dataTypes.ReadNextInt(packetData);
 
                         Dictionary<string, double> keys = new();
+                        List<PlayerAttributeSnapshot> playerAttributes = new();
                         for (var i = 0; i < numberOfProperties; i++)
                         {
                             string propertyKey;
+                            PlayerAttributeKind? playerAttribute;
                             if (protocolVersion < MC_1_20_6_Version)
                             {
                                 propertyKey = dataTypes.ReadNextString(packetData);
+                                playerAttribute = PlayerAttributeOf(propertyKey);
                             }
                             else
                             {
                                 var attrId = dataTypes.ReadNextVarInt(packetData);
                                 propertyKey = World.GetAttributeNameById(attrId) ?? "unknown";
+                                playerAttribute = PlayerAttributeOf(protocolVersion, attrId);
                             }
-                            var propertyValue2 = dataTypes.ReadNextDouble(packetData);
+                            var baseValue = dataTypes.ReadNextDouble(packetData);
+                            var propertyValue2 = baseValue;
 
                             List<double> op0 = new();
                             List<double> op1 = new();
                             List<double> op2 = new();
+                            List<PlayerAttribute.Modifier> modifiers = new();
 
                             var numberOfModifiers = dataTypes.ReadNextVarInt(packetData);
                             for (var j = 0; j < numberOfModifiers; j++)
@@ -2947,6 +2973,7 @@ namespace MinecraftClient.Protocol.Handlers
                                 var modifierId = protocolVersion < MC_1_21_Version ? dataTypes.ReadNextUUID(packetData).ToString() : dataTypes.ReadNextString(packetData);
                                 var amount = dataTypes.ReadNextDouble(packetData);
                                 var operation = dataTypes.ReadNextByte(packetData);
+                                modifiers.Add(new PlayerAttribute.Modifier(modifierId, amount, operation));
                                 switch (operation)
                                 {
                                     case 0:
@@ -2965,9 +2992,15 @@ namespace MinecraftClient.Protocol.Handlers
                             if (op1.Count > 0) propertyValue2 *= 1 + op1.Sum();
                             if (op2.Count > 0) propertyValue2 *= op2.Aggregate((a, _x) => a * _x);
                             keys[propertyKey] = propertyValue2;
+
+                            if (ownAttributes && playerAttribute is { } kind)
+                                playerAttributes.Add(new PlayerAttributeSnapshot(kind, baseValue, modifiers));
                         }
 
-                        handler.OnEntityProperties(entityId, keys);
+                        if (playerAttributes.Count > 0)
+                            handler.OnPlayerAttributes(playerAttributes);
+                        if (entityHandling)
+                            handler.OnEntityProperties(entityId, keys);
                     }
 
                     break;
@@ -4432,6 +4465,46 @@ namespace MinecraftClient.Protocol.Handlers
 
         /// <summary>How many of the client ticks due run now: the game's timer runs at most ten in a row.</summary>
         internal static int TicksToRun(long due) => (int)Math.Clamp(due, 0, 10);
+
+        /// <summary>
+        /// The player attribute an Update Attributes id stands for, by the version's attribute registry (a built-in one, the
+        /// server never sends it): 26.1 movement_speed 22, sneaking_speed 26; 26.2 and 26.3 (air_drag_modifier and others
+        /// added) 26 and 31. Other versions with ids are left out (the physics keeps the defaults there).
+        /// </summary>
+        internal static PlayerAttributeKind? PlayerAttributeOf(int protocolVersion, int attributeId) => protocolVersion switch
+        {
+            MC_26_1_Version => attributeId switch
+            {
+                22 => PlayerAttributeKind.MovementSpeed,
+                26 => PlayerAttributeKind.SneakingSpeed,
+                _ => null,
+            },
+            MC_26_2_Version or MC_26_3_Version => attributeId switch
+            {
+                26 => PlayerAttributeKind.MovementSpeed,
+                31 => PlayerAttributeKind.SneakingSpeed,
+                _ => null,
+            },
+            _ => null,
+        };
+
+        /// <summary>Before 1.20.6 the packet names the attribute: the movement speed (no sneaking speed before 1.21).</summary>
+        internal static PlayerAttributeKind? PlayerAttributeOf(string name) => name switch
+        {
+            "generic.movementSpeed" or "minecraft:generic.movementSpeed" or "generic.movement_speed"
+                or "minecraft:generic.movement_speed" => PlayerAttributeKind.MovementSpeed,
+            _ => null,
+        };
+
+        /// <summary>Handle the packets that have come in so far, in order, before the ticks due run.</summary>
+        private void HandleArrivedPackets()
+        {
+            for (int left = packetQueue.Count; left > 0 && packetQueue.TryTake(out var packetInfo); left--)
+            {
+                var (packetId, packetData) = packetInfo;
+                HandlePacket(packetId, packetData);
+            }
+        }
 
         /// <summary>
         /// Whether a move carries a rotation: one is given and it differs from the last one a move sent, as the game
@@ -5916,6 +5989,9 @@ namespace MinecraftClient.Protocol.Handlers
                 (byte)Config.MCSettings.MainHand);
         }
 
+
+        /// <inheritdoc/>
+        public float YawAsSent(float yaw) => NearestYaw(yaw, LastYaw);
 
         /// <summary>
         /// Send a location update to the server

@@ -29,8 +29,14 @@ namespace MinecraftClient.Physics
         public bool Jumping;
 
         // Movement mode flags
+        /// <summary>Sprinting (LocalPlayer.isSprinting): the sprint key starts it when the player can sprint, as in the game.</summary>
         public bool Sprinting;
+        /// <summary>The sneak key, as the game reads it this tick (isShiftKeyDown).</summary>
         public bool Sneaking;
+        /// <summary>The slowdown of a crouching player (LocalPlayer.crouching), worked out before the tick reads its keys.</summary>
+        public bool Crouching;
+        /// <summary>The crouching pose (Pose.CROUCHING): a box 1.5 high instead of 1.8, from the tick after the sneak key.</summary>
+        public bool CrouchPose;
         public bool CreativeFlying;
         public bool InWater;
         public bool InLava;
@@ -38,6 +44,19 @@ namespace MinecraftClient.Physics
         public bool HasSlowFalling;
         public bool HasLevitation;
         public int LevitationAmplifier;
+        /// <summary>The last move hit a wall at a small angle (Entity.minorHorizontalCollision): sprinting goes on.</summary>
+        public bool MinorHorizontalCollision;
+
+        /// <summary>
+        /// 1.21.5+: the keys go as a normalized vector and a diagonal one is stretched to the unit square
+        /// (LocalPlayer.modifyInputSpeedForSquareMovement); before, the keys go as they are.
+        /// </summary>
+        public bool SquareMovementInput = true;
+
+        // What sprinting needs (LocalPlayer.isSprintingPossible): food above 6 or flight allowed, and no blindness
+        public int FoodLevel = 20;
+        public bool MayFly;
+        public bool Blind;
 
         // Player dimensions
         public double PlayerWidth = PhysicsConsts.PlayerWidth;
@@ -46,18 +65,36 @@ namespace MinecraftClient.Physics
         // Anti-jump-spam
         private int noJumpDelay;
 
+        // Whether the standing and the crouching box fit where the player stands, as the tick starts
+        private bool canStand = true, canCrouch = true;
+
         // Tick counter for position packet timing
         public int TickCount;
 
-        // Movement speed attribute (base = 0.1 for players)
-        public float MovementSpeed = 0.1f;
+        /// <summary>The player's movement speed (Attributes.MOVEMENT_SPEED: base 0.1F, the server's modifiers, sprinting).</summary>
+        public readonly PlayerAttribute MovementSpeedAttribute = new(0.1f, 0.0, 1024.0);
+
+        /// <summary>The crouching player's speed factor (Attributes.SNEAKING_SPEED: 0.3, more with Swift Sneak).</summary>
+        public readonly PlayerAttribute SneakingSpeedAttribute = new(0.3, 0.0, 1.0);
+
+        /// <summary>LivingEntity.SPEED_MODIFIER_SPRINTING: 30% on the total while sprinting.</summary>
+        internal static readonly PlayerAttribute.Modifier SprintingModifier = new("minecraft:sprinting", 0.3f, 2);
+
+        /// <summary>Player.getSpeed: the movement speed attribute as a float.</summary>
+        public float MovementSpeed => (float)MovementSpeedAttribute.Value;
 
         /// <summary>
         /// Get the player's bounding box at current position
         /// </summary>
         public Aabb GetBoundingBox()
         {
-            return Aabb.OfSize(Position.X, Position.Y, Position.Z, PlayerWidth, PlayerHeight);
+            return BoxOf(CrouchPose);
+        }
+
+        private Aabb BoxOf(bool crouching)
+        {
+            return Aabb.OfSize(Position.X, Position.Y, Position.Z, PlayerWidth,
+                crouching ? PhysicsConsts.PlayerSneakHeight : PlayerHeight);
         }
 
         /// <summary>
@@ -81,6 +118,120 @@ namespace MinecraftClient.Physics
 
             if (noJumpDelay > 0)
                 noJumpDelay--;
+
+            UpdatePose(world);
+        }
+
+        /// <summary>
+        /// Player.updatePlayerPose, at the end of the game's tick: crouching while the sneak key is down (not flying),
+        /// standing otherwise; a pose whose box does not fit where the player stands gives way to the crouching one (the
+        /// game's swimming pose, for a gap lower than 1.5, is not modelled: the pose stays as it was). Client 4.2.11:
+        /// before, the box was 1.8 high in every pose, so a crouching player stopped under a ceiling the game walks under.
+        /// </summary>
+        private void UpdatePose(World world)
+        {
+            bool desired = Sneaking && !CreativeFlying;
+            if (CanFit(world, desired))
+                CrouchPose = desired;
+            else if (CanFit(world, true))
+                CrouchPose = true;
+        }
+
+        /// <summary>
+        /// LocalPlayer.aiStep's sprinting: the sprint key starts it when the player could sprint (moving forward, not
+        /// crouching, food above 6 or flight allowed, not blind, not in shallow water unless flying), and it stops when
+        /// it no longer could, without the forward key, or at a wall hit straight on. Releasing the key alone does not
+        /// stop it, as in the game. Client 4.2.11: before, the key was taken for sprinting and the walk never got
+        /// faster, so a client holding the key (MovementSpeed 5) or told to sprint (MCP) went at walking speed.
+        /// </summary>
+        private void UpdateSprinting(bool sprintKey, bool forwardImpulse)
+        {
+            bool possible = !Blind && (FoodLevel > 6 || MayFly) && (CreativeFlying || !InWater);
+            if (!Sprinting && forwardImpulse && possible && !Crouching && sprintKey)
+                SetSprinting(true);
+
+            if (Sprinting && (!possible || !forwardImpulse || (HorizontalCollision && !MinorHorizontalCollision)))
+                SetSprinting(false);
+        }
+
+        /// <summary>LivingEntity.setSprinting: the state and the sprint modifier of the movement speed.</summary>
+        public void SetSprinting(bool sprinting)
+        {
+            Sprinting = sprinting;
+            MovementSpeedAttribute.RemoveModifier(SprintingModifier.Id);
+            if (sprinting)
+                MovementSpeedAttribute.SetModifier(SprintingModifier);
+        }
+
+        /// <summary>
+        /// The walk's input from the movement keys (each -1, 0 or 1), as the game makes it: 1.21.5+ a normalized vector
+        /// (KeyboardInput), then LocalPlayer.modifyInput (0.98F, the sneaking speed while crouching, then stretched so a
+        /// diagonal reaches the unit square); before 1.21.5 the keys as they are, 0.98F and the sneaking speed.
+        /// Client 4.2.11: before, a diagonal was normalized first and went 2% slower than the game's (sneaking, 30%).
+        /// </summary>
+        internal static (float X, float Z) ModifyInput(bool square, float left, float forward, bool movingSlowly,
+            float sneakingSpeed)
+        {
+            if (!square)
+            {
+                left *= PhysicsConsts.InputFriction;
+                forward *= PhysicsConsts.InputFriction;
+                if (movingSlowly)
+                {
+                    left *= sneakingSpeed;
+                    forward *= sneakingSpeed;
+                }
+                return (left, forward);
+            }
+
+            float distance = MathF.Sqrt(left * left + forward * forward);
+            if (distance < 1.0E-4f)
+                return (0f, 0f);
+            float x = left / distance, z = forward / distance;
+
+            x *= PhysicsConsts.InputFriction;
+            z *= PhysicsConsts.InputFriction;
+            if (movingSlowly)
+            {
+                x *= sneakingSpeed;
+                z *= sneakingSpeed;
+            }
+
+            float length = MathF.Sqrt(x * x + z * z);
+            if (length <= 0.0f)
+                return (x, z);
+            float scale = 1.0f / length;
+            float dirX = x * scale, dirZ = z * scale;
+            float absX = Math.Abs(dirX), absZ = Math.Abs(dirZ);
+            float tan = absZ > absX ? absX / absZ : absZ / absX;
+            float toUnitSquare = MathF.Sqrt(1.0f + tan * tan);
+            float stretched = Math.Min(length * toUnitSquare, 1.0f);
+            return (dirX * stretched, dirZ * stretched);
+        }
+
+        /// <summary>
+        /// LocalPlayer.isHorizontalCollisionMinor: the wall stopped a move less than 8° off the way the keys push
+        /// (sprinting goes on along it).
+        /// </summary>
+        internal static bool IsHorizontalCollisionMinor(float yaw, float xxa, float zza, Vec3d movement)
+        {
+            float yawRad = VanillaMath.ToRadians(yaw);
+            double sin = VanillaMath.Sin(yawRad);
+            double cos = VanillaMath.Cos(yawRad);
+            double globalX = xxa * cos - zza * sin;
+            double globalZ = zza * cos + xxa * sin;
+            double inputLengthSqr = globalX * globalX + globalZ * globalZ;
+            double movementLengthSqr = movement.X * movement.X + movement.Z * movement.Z;
+            if (inputLengthSqr < 1.0E-5f || movementLengthSqr < 1.0E-5f)
+                return false;
+            double dot = globalX * movement.X + globalZ * movement.Z;
+            return Math.Acos(dot / Math.Sqrt(inputLengthSqr * movementLengthSqr)) < 0.13962634f;
+        }
+
+        /// <summary>Player.canPlayerFitWithinBlocksAndEntitiesWhen: the pose's box, pulled in by 1.0E-7, hits no block.</summary>
+        private bool CanFit(World world, bool crouching)
+        {
+            return CollisionDetector.NoCollision(world, BoxOf(crouching).Deflate(1.0E-7, 1.0E-7, 1.0E-7));
         }
 
         /// <summary>
@@ -89,25 +240,20 @@ namespace MinecraftClient.Physics
         /// </summary>
         public void ApplyInput(MovementInput input)
         {
-            var (rawXxa, rawZza) = input.GetMoveVector();
+            // LocalPlayer.aiStep works out whether the player crouches before it reads this tick's keys, so the sneak
+            // slowdown follows the sneak key a tick late, both ways, while the edge back-off follows it at once
+            // (isStayingOnGroundSurface reads the new key); a player who cannot stand up crouches without the key.
+            // Client 4.2.11: before, the slowdown came and went with the key, so a walk started in the tick the sneak
+            // key went up (AntiAFK) went a tick too fast for an anticheat.
+            Crouching = !CreativeFlying && canCrouch && (Sneaking || !canStand);
 
-            // Scale by INPUT_FRICTION (0.98) — this matches LocalPlayer.modifyInput
-            rawXxa *= PhysicsConsts.InputFriction;
-            rawZza *= PhysicsConsts.InputFriction;
-
-            // Sneak slowdown
-            if (input.Sneak)
-            {
-                rawXxa *= 0.3f;
-                rawZza *= 0.3f;
-            }
-
-            Xxa = rawXxa;
-            Zza = rawZza;
-            Yya = 0;
+            var (left, forward) = input.GetMoveImpulse();
             Jumping = input.Jump;
             Sneaking = input.Sneak;
-            Sprinting = input.Sprint;
+            UpdateSprinting(input.Sprint, forward > 1.0E-5f);
+
+            (Xxa, Zza) = ModifyInput(SquareMovementInput, left, forward, Crouching, (float)SneakingSpeedAttribute.Value);
+            Yya = 0;
 
             // Creative/spectator fly vertical
             if (CreativeFlying)
@@ -165,11 +311,11 @@ namespace MinecraftClient.Physics
 
             if (Sprinting)
             {
-                float yawRad = Yaw * (MathF.PI / 180.0f);
+                float yawRad = VanillaMath.ToRadians(Yaw);
                 DeltaMovement = DeltaMovement.Add(
-                    -MathF.Sin(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost,
+                    -VanillaMath.Sin(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost,
                     0,
-                    MathF.Cos(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost);
+                    VanillaMath.Cos(yawRad) * PhysicsConsts.SprintJumpHorizontalBoost);
             }
         }
 
@@ -312,17 +458,19 @@ namespace MinecraftClient.Physics
         }
 
         /// <summary>
-        /// Rotate input by yaw and scale by speed. Equivalent to Entity.getInputVector().
+        /// Rotate input by yaw and scale by speed. Equivalent to Entity.getInputVector(), with the game's sine table
+        /// (client 4.2.11: before, the exact sine, a few millionths of a block off the game's every tick).
         /// </summary>
-        private static Vec3d GetInputVector(Vec3d input, float speed, float yaw)
+        internal static Vec3d GetInputVector(Vec3d input, float speed, float yaw)
         {
             double lenSqr = input.LengthSqr();
             if (lenSqr < 1.0E-7)
                 return Vec3d.Zero;
 
             Vec3d scaled = (lenSqr > 1.0 ? input.Normalize() : input).Scale(speed);
-            float sinYaw = MathF.Sin(yaw * (MathF.PI / 180.0f));
-            float cosYaw = MathF.Cos(yaw * (MathF.PI / 180.0f));
+            float yawRad = VanillaMath.ToRadians(yaw);
+            float sinYaw = VanillaMath.Sin(yawRad);
+            float cosYaw = VanillaMath.Cos(yawRad);
 
             return new Vec3d(
                 scaled.X * cosYaw - scaled.Z * sinYaw,
@@ -344,8 +492,7 @@ namespace MinecraftClient.Physics
             }
 
             // Sneak edge back-off
-            if (Sneaking && OnGround)
-                movement = MaybeBackOffFromEdge(world, movement);
+            movement = MaybeBackOffFromEdge(world, movement);
 
             Aabb box = GetBoundingBox();
             Vec3d resolved = CollisionDetector.Collide(world, box, movement, OnGround, PhysicsConsts.StepHeight);
@@ -366,6 +513,7 @@ namespace MinecraftClient.Physics
             bool blockedX = !MthEqual(movement.X, resolved.X);
             bool blockedZ = !MthEqual(movement.Z, resolved.Z);
             HorizontalCollision = blockedX || blockedZ;
+            MinorHorizontalCollision = HorizontalCollision && IsHorizontalCollisionMinor(Yaw, Xxa, Zza, resolved);
             VerticalCollision = movement.Y != resolved.Y;
             VerticalCollisionBelow = VerticalCollision && movement.Y < 0.0;
             OnGround = VerticalCollisionBelow;
@@ -394,37 +542,68 @@ namespace MinecraftClient.Physics
 
         /// <summary>
         /// Sneak edge detection: prevent walking off edges while sneaking.
-        /// Equivalent to Player.maybeBackOffFromEdge(Vec3, MoverType).
+        /// Equivalent to Player.maybeBackOffFromEdge(Vec3, MoverType) from 1.21.2: with the sneak key down, not flying,
+        /// not moving up and above ground, each horizontal part of the move shrinks by 0.05 until the player could no longer
+        /// fall a step height there. Client 4.2.11: before, the client only did it on the ground and tested its whole box
+        /// moved a block down, which counts a block beside the player as ground; the game (and Grim, which replays it)
+        /// tests the slab under the feet, so the client walked off edges the game stops at, or stopped where it walks on.
         /// </summary>
         private Vec3d MaybeBackOffFromEdge(World world, Vec3d movement)
         {
-            if (movement.Y > 0) return movement;
+            float maxDownStep = PhysicsConsts.StepHeight;
+            if (CreativeFlying || movement.Y > 0.0 || !Sneaking || !IsAboveGround(world, maxDownStep))
+                return movement;
 
-            double step = 0.05;
             double dx = movement.X;
             double dz = movement.Z;
-            Aabb box = GetBoundingBox();
+            double stepX = Math.Sign(dx) * 0.05;
+            double stepZ = Math.Sign(dz) * 0.05;
 
-            while (dx != 0.0 && CollisionDetector.CollectBlockColliders(world,
-                box.Move(dx, -1.0, 0)).Count == 0)
+            while (dx != 0.0 && CanFallAtLeast(world, dx, 0.0, maxDownStep))
             {
-                dx = dx < step && dx >= -step ? 0.0 : (dx > 0.0 ? dx - step : dx + step);
+                if (Math.Abs(dx) <= 0.05)
+                {
+                    dx = 0.0;
+                    break;
+                }
+                dx -= stepX;
             }
 
-            while (dz != 0.0 && CollisionDetector.CollectBlockColliders(world,
-                box.Move(0, -1.0, dz)).Count == 0)
+            while (dz != 0.0 && CanFallAtLeast(world, 0.0, dz, maxDownStep))
             {
-                dz = dz < step && dz >= -step ? 0.0 : (dz > 0.0 ? dz - step : dz + step);
+                if (Math.Abs(dz) <= 0.05)
+                {
+                    dz = 0.0;
+                    break;
+                }
+                dz -= stepZ;
             }
 
-            while (dx != 0.0 && dz != 0.0 && CollisionDetector.CollectBlockColliders(world,
-                box.Move(dx, -1.0, dz)).Count == 0)
+            while (dx != 0.0 && dz != 0.0 && CanFallAtLeast(world, dx, dz, maxDownStep))
             {
-                dx = dx < step && dx >= -step ? 0.0 : (dx > 0.0 ? dx - step : dx + step);
-                dz = dz < step && dz >= -step ? 0.0 : (dz > 0.0 ? dz - step : dz + step);
+                dx = Math.Abs(dx) <= 0.05 ? 0.0 : dx - stepX;
+                dz = Math.Abs(dz) <= 0.05 ? 0.0 : dz - stepZ;
             }
 
             return new Vec3d(dx, movement.Y, dz);
+        }
+
+        /// <summary>Player.isAboveGround: on the ground, or a fall shorter than a step with ground within the rest of it.</summary>
+        private bool IsAboveGround(World world, float maxDownStep)
+        {
+            return OnGround || (FallDistance < maxDownStep && !CanFallAtLeast(world, 0.0, 0.0, maxDownStep - FallDistance));
+        }
+
+        /// <summary>
+        /// Player.canFallAtLeast: nothing to stand on in the slab under the feet, moved by (dx, dz), down to the given
+        /// height; the slab is pulled in by 1.0E-7 on every side but the top, so a block only touching it does not count.
+        /// </summary>
+        private bool CanFallAtLeast(World world, double dx, double dz, double minHeight)
+        {
+            Aabb box = GetBoundingBox();
+            return CollisionDetector.NoCollision(world, new Aabb(
+                box.MinX + 1.0E-7 + dx, box.MinY - minHeight - 1.0E-7, box.MinZ + 1.0E-7 + dz,
+                box.MaxX - 1.0E-7 + dx, box.MinY, box.MaxZ - 1.0E-7 + dz));
         }
 
         /// <summary>
@@ -470,7 +649,8 @@ namespace MinecraftClient.Physics
             }
             else
             {
-                return CreativeFlying ? MovementSpeed * 0.1f : PhysicsConsts.AirAcceleration;
+                // Player.getFlyingSpeed: a sprinting player steers a little more in the air
+                return CreativeFlying ? MovementSpeed * 0.1f : Sprinting ? 0.025999999f : PhysicsConsts.AirAcceleration;
             }
         }
 
@@ -551,6 +731,10 @@ namespace MinecraftClient.Physics
                       || feetBlock == Material.BubbleColumn;
             InLava = feetBlock == Material.Lava || headBlock == Material.Lava;
             OnClimbable = feetBlock.CanBeClimbedOn();
+
+            // LocalPlayer.aiStep: whether the player could stand or crouch where it is (the crouching slowdown)
+            canStand = CanFit(world, false);
+            canCrouch = CanFit(world, true);
         }
 
         /// <summary>
@@ -559,6 +743,22 @@ namespace MinecraftClient.Physics
         public void SetPosition(double x, double y, double z)
         {
             Position = new Vec3d(x, y, z);
+        }
+
+        /// <summary>
+        /// A new player (a join or a respawn, as the game makes a new LocalPlayer): at rest, standing, not sprinting, with
+        /// what it keeps of the last one's attributes (the server sends only those that change afterwards).
+        /// </summary>
+        public void ResetPlayer(AttributesKept attributesKept)
+        {
+            DeltaMovement = Vec3d.Zero;
+            FallDistance = 0;
+            Sneaking = Crouching = CrouchPose = false;
+            SetSprinting(false);
+            HorizontalCollision = MinorHorizontalCollision = false;
+            canStand = canCrouch = true;
+            MovementSpeedAttribute.ForNewPlayer(attributesKept);
+            SneakingSpeedAttribute.ForNewPlayer(attributesKept);
         }
 
         /// <summary>

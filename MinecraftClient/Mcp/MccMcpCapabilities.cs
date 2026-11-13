@@ -793,8 +793,8 @@ public sealed class MccMcpCapabilities : IMccMcpCapabilities
         if (client is null)
             return NotConnected();
 
-        EntityActionType action = enabled ? EntityActionType.StartSprinting : EntityActionType.StopSprinting;
-        bool ok = client.SendEntityAction(action);
+        // The sprint key: the player sprints when it can, as with the game's key (client 4.2.11)
+        bool ok = client.SetSprintKey(enabled);
         object resultData = new { success = ok, enabled };
         return ok
             ? MccMcpResult.Ok(resultData)

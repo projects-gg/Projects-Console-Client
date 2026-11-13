@@ -7,9 +7,11 @@ namespace MinecraftClient.Physics
     public static class PhysicsConsts
     {
         // --- Player dimensions ---
-        public const double PlayerWidth = 0.6;
-        public const double PlayerHeight = 1.8;
-        public const double PlayerSneakHeight = 1.5;
+        // Float values as the game keeps them (EntityDimensions.scalable(0.6F, 1.8F)): its box reaches 0.30000001192 to each
+        // side, so a player stopped by a wall stands where the game's would (client 4.2.11: before, 1.2E-8 nearer).
+        public const double PlayerWidth = 0.6f;
+        public const double PlayerHeight = 1.8f;
+        public const double PlayerSneakHeight = 1.5f;
         public const double PlayerSwimHeight = 0.6;
         public const double PlayerEyeHeight = 1.62;
 

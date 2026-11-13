@@ -4,6 +4,7 @@ using MinecraftClient.Dialogs;
 using MinecraftClient.Inventory;
 using MinecraftClient.Logger;
 using MinecraftClient.Mapping;
+using MinecraftClient.Physics;
 using MinecraftClient.Protocol.Message;
 using MinecraftClient.Protocol.ProfileKey;
 using MinecraftClient.Scripting;
@@ -88,6 +89,12 @@ namespace MinecraftClient.Protocol
         /// Called when a server was successfully joined
         /// </summary>
         void OnGameJoined(bool isOnlineMode);
+
+        /// <summary>
+        /// Called when the server starts configuring the client again (Start Configuration: a proxy's server switch, a
+        /// server's reconfiguration): the game clears its world and has no player until the next join places one.
+        /// </summary>
+        void OnConfigurationStart();
 
         /// <summary>
         /// Received chat/system message from the server
@@ -202,7 +209,9 @@ namespace MinecraftClient.Protocol
         /// <summary>
         /// Called when the player respawns, which happens on login, respawn and world change.
         /// </summary>
-        void OnRespawn();
+        /// <param name="keepAttributeModifiers">The Respawn keeps the attribute modifiers (Data Kept 1: a change of
+        /// dimension); otherwise the new player keeps only the base values (a respawn after death).</param>
+        void OnRespawn(bool keepAttributeModifiers);
 
         /// <summary>
         /// Triggered when a new player joins the game
@@ -387,6 +396,12 @@ namespace MinecraftClient.Protocol
         /// <param name="EntityID">Entity ID</param>
         /// <param name="prop">Dictionary of properties</param>
         void OnEntityProperties(int entityID, Dictionary<string, Double> prop);
+
+        /// <summary>
+        /// The player's own attributes the physics uses (movement and sneaking speed), as the server sent them; with
+        /// terrain and movements, whether entity handling is on or not.
+        /// </summary>
+        void OnPlayerAttributes(IReadOnlyList<PlayerAttributeSnapshot> attributes);
 
         /// <summary>
         /// Called when the status of an entity have been changed

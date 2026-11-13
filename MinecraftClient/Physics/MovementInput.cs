@@ -1,5 +1,3 @@
-using System;
-
 namespace MinecraftClient.Physics
 {
     /// <summary>
@@ -16,29 +14,17 @@ namespace MinecraftClient.Physics
         public bool Sprint;
 
         /// <summary>
-        /// Get the raw input vector (xxa, zza) before rotation.
-        /// Forward = +zza, Back = -zza, Left = +xxa, Right = -xxa.
-        /// Then normalized if magnitude > 1.
+        /// The keys as KeyboardInput reads them (calculateImpulse): -1, 0 or 1 sideways (left positive) and forward;
+        /// PlayerPhysics turns them into the walk's input as the player's version does.
         /// </summary>
-        public (float xxa, float zza) GetMoveVector()
+        public (float Left, float Forward) GetMoveImpulse()
         {
-            float xxa = 0;
-            float zza = 0;
+            return (Impulse(Left, Right), Impulse(Forward, Back));
+        }
 
-            if (Forward) zza += 1.0f;
-            if (Back) zza -= 1.0f;
-            if (Left) xxa += 1.0f;
-            if (Right) xxa -= 1.0f;
-
-            float lenSqr = xxa * xxa + zza * zza;
-            if (lenSqr > 1.0f)
-            {
-                float len = MathF.Sqrt(lenSqr);
-                xxa /= len;
-                zza /= len;
-            }
-
-            return (xxa, zza);
+        private static float Impulse(bool positive, bool negative)
+        {
+            return positive == negative ? 0.0f : positive ? 1.0f : -1.0f;
         }
 
         public void Reset()
