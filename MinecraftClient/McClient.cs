@@ -3815,6 +3815,18 @@ namespace MinecraftClient
         }
 
         /// <summary>
+        /// The server configures the client again (a proxy's server switch, a reconfiguration): the game clears its
+        /// world and has no player until the join that follows, so the player stands still from now (client 4.2.11:
+        /// before, it stood still from the join only, and a tick between the configuration's end and the join, a round
+        /// trip, sent the last server's position to the new one: Grim GroundSpoof, AimModulo360 and a Simulation of
+        /// hundreds of blocks, then a setback, at the switch).
+        /// </summary>
+        public void OnConfigurationStart()
+        {
+            AwaitServerPosition();
+        }
+
+        /// <summary>
         /// Called when the player respawns, which happens on login, respawn and world change.
         /// </summary>
         public void OnRespawn()

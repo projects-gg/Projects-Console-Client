@@ -1411,6 +1411,7 @@ namespace MinecraftClient.Protocol.Handlers
                     break;
                 case PacketTypesIn.StartConfiguration:
                     SetCurrentState(CurrentState.Configuration);
+                    handler.OnConfigurationStart(); // the game's player leaves the world until the next join
                     SendAcknowledgeConfiguration();
                     break;
                 case PacketTypesIn.HideMessage:

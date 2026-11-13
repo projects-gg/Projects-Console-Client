@@ -90,6 +90,12 @@ namespace MinecraftClient.Protocol
         void OnGameJoined(bool isOnlineMode);
 
         /// <summary>
+        /// Called when the server starts configuring the client again (Start Configuration: a proxy's server switch, a
+        /// server's reconfiguration): the game clears its world and has no player until the next join places one.
+        /// </summary>
+        void OnConfigurationStart();
+
+        /// <summary>
         /// Received chat/system message from the server
         /// </summary>
         /// <param name="message">Message received</param>

@@ -914,7 +914,9 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
   the sneak key holds the player back at an edge the way the game tests it, and slows it down a tick after it goes down
   (and up); a walk turns by the game's sine table and the yaw the move sends; and the packets that came in are handled
   before the ticks due. Before, an account walking into a wall or an edge drew clusters of Simulation flags, and a
-  walk could stop at a half block the game climbs.
+  walk could stop at a half block the game climbs. At a proxy's server switch the player stands still (movement
+  operations answer `not_ready`) from the moment the server starts configuring the client, not only from the join
+  that follows: before, a tick in between sent the last server's position to the new one.
 - Other changes the bridge needed, active for every user:
   - the client follows the server's cursor item (1.21.2+ cursor packet, carried item of a full resync);
   - an item's removed components are kept (`Item.RemovedComponents`);
