@@ -31,11 +31,21 @@ namespace MinecraftClient.ChatBots
         public const string Follow = "follow";
         public const string Stop = "stop";
 
+        // Version 4: auto-fishing and auto-mining.
+        public const string Fish = "fish";
+        public const string Mine = "mine";
+        public const string Aim = "aim";
+
         public const int MaxIdLength = 64;
         public const int MaxRenameLength = 12;
         public const int MaxSteps = 8;
         public const int MaxCoordinate = 30_000_000;
         public const int MaxHeight = 2048;
+
+        // Version 4: a start's limits.
+        public const int MaxKeep = 100;
+        public const int MinIdleSeconds = 20;
+        public const int MaxIdleSeconds = 3600;
 
         /// <summary>Order of arrival within the process, from 1.</summary>
         public required long Arrival { get; init; }
@@ -77,11 +87,28 @@ namespace MinecraftClient.ChatBots
         /// <summary><c>approach</c>, <c>follow</c>: the player's name.</summary>
         public string? Name { get; init; }
 
+        /// <summary><c>fish</c>, <c>mine</c>: <c>start</c>, <c>stop</c>, <c>pause</c> or <c>resume</c>.</summary>
+        public string? Do { get; init; }
+
+        /// <summary><c>fish</c>, <c>mine</c> with <c>pause</c>: <c>player</c> (the default) or <c>trade</c>.</summary>
+        public string? Why { get; init; }
+
+        /// <summary><c>fish</c>, <c>mine</c> with <c>start</c>: the mode's settings.</summary>
+        public AutoSettings? Auto { get; init; }
+
+        /// <summary><c>aim</c>: the look, in degrees rounded to a tenth (yaw -180 to 180, pitch -90 to 90).</summary>
+        public float Yaw { get; init; }
+
+        public float Pitch { get; init; }
+
         /// <summary>A click or drop on the player inventory while no window is open: <c>win: 0, ws: 0</c>.</summary>
         public bool OnPlayerInventory => Window == 0 && WindowSeq == 0;
 
         /// <summary>A version 3 movement operation other than <c>stop</c>.</summary>
         public bool Moves => Op is Step or Jump or Sneak or Goto or Approach or Follow;
+
+        /// <summary>A version 4 operation: auto-fishing, auto-mining or the look they keep.</summary>
+        public bool IsAuto => Op is Fish or Mine or Aim;
 
         /// <summary>
         /// Parse and check the shape of one input line. On failure, <paramref name="op"/> and
@@ -91,13 +118,27 @@ namespace MinecraftClient.ChatBots
         public static bool TryParse(ReadOnlySpan<byte> line, long arrival, [NotNullWhen(true)] out AgentOperation? operation,
             out string? op, out string? id, out string? reason)
         {
-            return TryParse(line, arrival, AgentMovement.Enabled, out operation, out op, out id, out reason);
+            return TryParse(line, arrival, AgentAuto.Features, out operation, out op, out id, out reason);
         }
 
         /// <summary>As above; <paramref name="movement"/>: the movement operations are known.</summary>
         public static bool TryParse(ReadOnlySpan<byte> line, long arrival, bool movement,
             [NotNullWhen(true)] out AgentOperation? operation, out string? op, out string? id, out string? reason)
         {
+            return TryParse(line, arrival, movement ? AgentFeatures.Move : AgentFeatures.None, out operation, out op,
+                out id, out reason);
+        }
+
+        /// <summary>
+        /// As above; <paramref name="features"/>: the parts the host asked for (movement's operations, version 4's
+        /// <c>fish</c>, <c>mine</c> and <c>aim</c>); the operations of the others are unknown.
+        /// </summary>
+        public static bool TryParse(ReadOnlySpan<byte> line, long arrival, AgentFeatures features,
+            [NotNullWhen(true)] out AgentOperation? operation, out string? op, out string? id, out string? reason)
+        {
+            bool movement = (features & AgentFeatures.Move) != 0;
+            bool fishing = (features & AgentFeatures.Fish) != 0;
+            bool mining = (features & AgentFeatures.Mine) != 0;
             operation = null;
             op = null;
             id = null;
@@ -137,7 +178,8 @@ namespace MinecraftClient.ChatBots
 
                 op = opElement.GetString();
                 bool known = op is Click or Rename or Close or Hold or Snapshot or Drop or Use
-                             || movement && op is Step or Jump or Sneak or Goto or Approach or Follow or Stop;
+                             || movement && op is Step or Jump or Sneak or Goto or Approach or Follow or Stop
+                             || fishing && op is Fish || mining && op is Mine || (fishing || mining) && op is Aim;
                 if (op is null || !known)
                 {
                     reason = "unknown_op";
@@ -167,7 +209,9 @@ namespace MinecraftClient.ChatBots
 
                 int slot = 0, button = 0, count = 0, x = 0, y = 0, z = 0;
                 bool stack = false, on = false;
-                string? mode = null, text = null, what = null, dir = null, name = null;
+                string? mode = null, text = null, what = null, dir = null, name = null, doing = null, why = null;
+                AutoSettings? auto = null;
+                float yaw = 0, pitch = 0;
                 switch (op)
                 {
                     case Click:
@@ -227,6 +271,40 @@ namespace MinecraftClient.ChatBots
                     case Use:
                     case Jump:
                     case Stop:
+                        break;
+
+                    case Fish:
+                    case Mine:
+                        if (!root.TryGetProperty("do", out JsonElement doElement) || doElement.ValueKind != JsonValueKind.String)
+                            return false;
+                        doing = doElement.GetString();
+                        if (doing is not ("start" or "stop" or "pause" or "resume"))
+                            return false;
+                        if (doing == "pause")
+                        {
+                            why = "player";
+                            if (root.TryGetProperty("why", out JsonElement whyElement))
+                            {
+                                if (whyElement.ValueKind != JsonValueKind.String)
+                                    return false;
+                                why = whyElement.GetString();
+                                if (why is not ("player" or "trade"))
+                                    return false;
+                            }
+                        }
+                        else if (doing == "start" && !AutoSettings.TryParse(root, op == Mine, out auto, out reason))
+                        {
+                            return false;
+                        }
+
+                        break;
+
+                    case Aim:
+                        if (!root.TryGetProperty("yaw", out JsonElement yawElement)
+                            || !TryReadAngle(yawElement, 180, out yaw)
+                            || !root.TryGetProperty("pitch", out JsonElement pitchElement)
+                            || !TryReadAngle(pitchElement, 90, out pitch))
+                            return false;
                         break;
 
                     case Step:
@@ -300,6 +378,11 @@ namespace MinecraftClient.ChatBots
                     Y = y,
                     Z = z,
                     Name = name,
+                    Do = doing,
+                    Why = why,
+                    Auto = auto,
+                    Yaw = yaw,
+                    Pitch = pitch,
                 };
                 reason = null;
                 return true;
@@ -350,7 +433,18 @@ namespace MinecraftClient.ChatBots
             return true;
         }
 
-        private static bool TryReadInt(JsonElement element, int min, int max, out int value)
+        /// <summary>An angle within plus or minus <paramref name="limit"/> degrees, rounded to a tenth.</summary>
+        internal static bool TryReadAngle(JsonElement element, double limit, out float value)
+        {
+            value = 0;
+            if (element.ValueKind != JsonValueKind.Number || !element.TryGetDouble(out double degrees)
+                                                          || !double.IsFinite(degrees) || Math.Abs(degrees) > limit)
+                return false;
+            value = (float)(Math.Round(degrees * 10, MidpointRounding.AwayFromZero) / 10);
+            return true;
+        }
+
+        internal static bool TryReadInt(JsonElement element, int min, int max, out int value)
         {
             value = 0;
             return element.ValueKind == JsonValueKind.Number

@@ -102,6 +102,13 @@ namespace MinecraftClient.Protocol
         float YawAsSent(float yaw) => yaw;
 
         /// <summary>
+        /// A client without terrain stands still as the game's player does (an agent bridge version 4 mode runs): its
+        /// moves go as a standing player's (<see cref="SendLocationUpdate"/>: the position once a second, a look when it
+        /// changes) and a teleport is answered with the position and look, as a client with terrain answers it.
+        /// </summary>
+        void SetStandingWithoutTerrain(bool standing) { }
+
+        /// <summary>
         /// Send a plugin channel packet to the server.
         /// </summary>
         /// <see href="http://dinnerbone.com/blog/2012/01/13/minecraft-plugin-channels-messaging/" />
@@ -197,6 +204,12 @@ namespace MinecraftClient.Protocol
         /// <param name="stateId">Inventory's stateId</param>
         /// <returns>True if packet was successfully sent</returns>
         bool SendWindowAction(int windowId, int slotId, WindowActionType action, Item? item, List<Tuple<short, Item?>> changedSlots, int stateId);
+
+        /// <summary>
+        /// A window click with a hotbar number key over a slot (mode 2): the slot and that hotbar slot swap; the cursor
+        /// stays empty. Goes once the server knows every key is up, as every click (client 4.2.9).
+        /// </summary>
+        bool SendWindowSwap(int windowId, int slotId, int hotbar, List<Tuple<short, Item?>> changedSlots, int stateId) => false;
 
         /// <summary>
         /// Request Creative Mode item creation into regular/survival Player Inventory

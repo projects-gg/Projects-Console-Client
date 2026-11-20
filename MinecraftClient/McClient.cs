@@ -135,6 +135,12 @@ namespace MinecraftClient
         private volatile bool bridgeSneak;
         private int bridgeJumpTicks;
 
+        // The agent bridge's version 4 (auto-fishing, auto-mining): set only by its controllers, inert otherwise.
+        private (float Yaw, float Pitch)? bridgeLookWithoutTerrain; // a look for this tick's move, without terrain
+        private volatile bool bridgeStanding; // a mode runs: without terrain the player's moves go as a standing player's
+        private int bridgeStepKey; // 1: the back key, 2: the forward key, held without turning (mining's step)
+        private string? sequenceWorld; // the world the block action sequence counts in (NextSequence)
+
         // A screen (client 4.2.9): a window the server opened, or the player's own inventory while the client clicks it.
         // The game releases every key when one opens and the player stands until it closes; anticheats flag a window
         // click or close made with a movement, sneak or sprint key down (Grim MultiActionsC cancels the click).
@@ -162,6 +168,35 @@ namespace MinecraftClient
         private Dictionary<string, byte[]> Cookies { get; set; } = new();
 
         public int GetServerPort() { return port; }
+
+        /// <summary>
+        /// The address the connection reached, after the SRV and DNS lookups (and a transfer): the peer's IP and port, or
+        /// null when there is none (through a proxy: the proxy's). The cloud machine compares it with the address it
+        /// checked before it started the client (agent bridge version 4).
+        /// </summary>
+        public (string Ip, int Port)? GetConnectedEndPoint() => EndPointOf(client?.Client);
+
+        /// <summary>The peer of a connected socket, its IP as text (an IPv4 address mapped into IPv6 as IPv4), or null.</summary>
+        internal static (string Ip, int Port)? EndPointOf(Socket? socket)
+        {
+            try
+            {
+                if (socket?.RemoteEndPoint is IPEndPoint endPoint)
+                    return (AddressText(endPoint.Address), endPoint.Port);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+
+            return null;
+        }
+
+        /// <summary>An IP address as text, an IPv4 address mapped into IPv6 written as IPv4 ("::ffff:1.2.3.4" is 1.2.3.4).</summary>
+        internal static string AddressText(IPAddress address) =>
+            (address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString();
         public string GetServerHost() { return host; }
         public string GetUsername() { return username; }
         public Guid GetUserUuid() { return uuid; }
@@ -824,6 +859,34 @@ namespace MinecraftClient
                     _pitch = null;
                 }
             }
+            else if (!terrainAndMovementsEnabled && locationReceived && bridgeStanding)
+            {
+                // Without terrain the client sends no move, except a version 4 mode's client (BridgeStand): its player
+                // stands as the game's does, where the server placed it, and its moves go as a standing player's (the
+                // position once a second, the mode's look when it changes), so an anticheat sees a player that stands and
+                // looks (Grim BadPacketsE flags 20 looks in a row without a position, BadPacketsR none for 2 s). No turn
+                // while a screen is open: the game turns no head on a screen.
+                (float Yaw, float Pitch)? look = null;
+                if (!screen.Open)
+                {
+                    lock (locationLock)
+                    {
+                        look = bridgeLookWithoutTerrain;
+                        bridgeLookWithoutTerrain = null;
+                    }
+                }
+
+                // The keys first, as the game sends its Player Input before its move: a standing player holds none but the
+                // sneak key AntiAFK may press (else that change would go after the move, at the tick's end: Grim
+                // PacketOrderO, experimental, e2e on 26.3).
+                handler.SetMovementKeys(false, false, false, false, false, false, false);
+                handler.SendLocationUpdate(location, onGround: true, horizontalCollision: false, look?.Yaw, look?.Pitch);
+                if (look is { } turn)
+                {
+                    playerYaw = turn.Yaw;
+                    playerPitch = turn.Pitch;
+                }
+            }
 
             if (Config.Main.Advanced.AutoRespawn && respawnTicks > 0)
             {
@@ -867,7 +930,7 @@ namespace MinecraftClient
                 {
                     if (--RemainingDiggingTime == 0 && LastDigPosition is not null)
                     {
-                        handler.SendPlayerDigging(2, LastDigPosition.Item1, LastDigPosition.Item2, sequenceId++);
+                        handler.SendPlayerDigging(2, LastDigPosition.Item1, LastDigPosition.Item2, NextSequence());
                         Log.Info(string.Format(Translations.cmd_dig_end, LastDigPosition.Item1));
                     }
                     else
@@ -2139,7 +2202,7 @@ namespace MinecraftClient
             return InvokeOnMainThread(() =>
             {
                 NoteEating(36 + CurrentSlot);
-                return handler.SendUseItem(0, sequenceId++);
+                return handler.SendUseItem(0, NextSequence());
             });
         }
 
@@ -2152,7 +2215,7 @@ namespace MinecraftClient
             return InvokeOnMainThread(() =>
             {
                 NoteEating(45);
-                return handler.SendUseItem(1, sequenceId++);
+                return handler.SendUseItem(1, NextSequence());
             });
         }
 
@@ -3326,7 +3389,7 @@ namespace MinecraftClient
                     UpdateLocation(GetCurrentLocation(), location.ToCenter());
                     handler.SendLocationUpdate(GetCurrentLocation(), Movement.IsOnGround(world, GetCurrentLocation()), false, _yaw, _pitch);
                 }
-                return handler.SendPlayerBlockPlacement((int)hand, location, blockFace, sequenceId++);
+                return handler.SendPlayerBlockPlacement((int)hand, location, blockFace, NextSequence());
             });
         }
 
@@ -3353,7 +3416,7 @@ namespace MinecraftClient
             {
                 if (RemainingDiggingTime > 0 && LastDigPosition is not null)
                 {
-                    handler.SendPlayerDigging(1, LastDigPosition.Item1, LastDigPosition.Item2, sequenceId++);
+                    handler.SendPlayerDigging(1, LastDigPosition.Item1, LastDigPosition.Item2, 0); // an abort has none
                     Log.Info(string.Format(Translations.cmd_dig_cancel, LastDigPosition.Item1));
                 }
 
@@ -3372,14 +3435,14 @@ namespace MinecraftClient
 
                 // Send dig start and dig end, will need to wait for server response to know dig result
                 // See https://wiki.vg/How_to_Write_a_Client#Digging for more details
-                bool result = handler.SendPlayerDigging(0, location, blockFace, sequenceId++)
+                bool result = handler.SendPlayerDigging(0, location, blockFace, NextSequence())
                     && (!swingArms || DoAnimation((int)Hand.MainHand));
 
                 if (autoComputedDuration && duration <= 0)
                     return result;
 
                 if (duration <= 0)
-                    result &= handler.SendPlayerDigging(2, location, blockFace, sequenceId++);
+                    result &= handler.SendPlayerDigging(2, location, blockFace, NextSequence());
                 else
                 {
                     LastDigPosition = new(location, blockFace);
@@ -3497,9 +3560,9 @@ namespace MinecraftClient
             if (InvokeRequired)
                 return InvokeOnMainThread(() => DropSelectedItem(dropEntireStack));
 
-            Location actionLocation = GetCurrentLocation().ToFloor();
+            // As the game sends it: at 0, 0, 0, facing down, without a sequence (Grim BadPacketsL flags anything else).
             int status = dropEntireStack ? 3 : 4;
-            bool sent = handler.SendPlayerDigging(status, actionLocation, Direction.Down, sequenceId++);
+            bool sent = handler.SendPlayerDigging(status, Location.Zero, Direction.Down, 0);
             if (sent)
                 ApplySelectedItemDropPrediction(dropEntireStack);
 
@@ -3823,6 +3886,10 @@ namespace MinecraftClient
                 world.Clear();
             AwaitServerPosition(AttributesKept.None);
 
+            // A join is a new world for the game: its block actions are numbered from 1 again.
+            sequenceWorld = null;
+            RestartSequence(World.GetDimension()?.Name);
+
             // Every join, a proxy's server switch too, shows the game's world loading screen: an open dialog (one of the
             // configuration, or the old server's) closes, reported before the bots hear of the join.
             CloseDialogScreens();
@@ -3867,6 +3934,7 @@ namespace MinecraftClient
                 world.Clear();
             }
             AwaitServerPosition(keepAttributeModifiers ? AttributesKept.All : AttributesKept.Bases);
+            RestartSequence(World.GetDimension()?.Name); // another dimension is another world for the game
 
             entities.Clear();
             ClearKnownSigns();
@@ -3983,6 +4051,12 @@ namespace MinecraftClient
                 bridgeJumpTicks--;
                 physicsInput.Jump = true;
             }
+
+            // Mining's step back and return (agent bridge version 4): the back or the forward key, without turning.
+            if (bridgeStepKey == 1)
+                physicsInput.Back = true;
+            else if (bridgeStepKey == 2)
+                physicsInput.Forward = true;
         }
 
         /// <summary>The server told the client where it stands (agent bridge movement).</summary>
@@ -4050,6 +4124,155 @@ namespace MinecraftClient
                 return handler.SendEntityAction(playerEntityID, (int)action);
             });
         }
+
+        // Agent bridge version 4 (auto-fishing, auto-mining; docs/agent-bridge.md). A mode's controller acts from its
+        // bot's Update(), which runs before the tick's move, so its held slot, click, use, dig and swing packets go before
+        // the move packet as the game sends them (Grim Post flags any of them between the move and Client Tick End, which
+        // the client's own dig command does with its finish). Called on the client's tick only.
+
+        /// <summary>Use the item in the main hand (a cast or a reel), with the swing the game sends after it before 26.3.</summary>
+        internal bool BridgeUseItem()
+        {
+            if (!handler.SendUseItem(0, NextSequence()))
+                return false;
+            // 26.3: the server swings the arm for a use itself, and the client's swing packet became the attack's Punch.
+            if (protocolversion < Protocol18Handler.MC_26_3_Version)
+                handler.SendAnimation(0, playerEntityID);
+            return true;
+        }
+
+        /// <summary>
+        /// A dig action on a block: 0 starts it, 1 aborts it, 2 finishes it. Starts and finishes are numbered as the game
+        /// numbers them, an abort carries no number (the game's abort has none).
+        /// </summary>
+        internal bool BridgeDig(int status, Location block, Direction face)
+        {
+            return handler.SendPlayerDigging(status, block, face, status == 1 ? 0 : NextSequence());
+        }
+
+        /// <summary>A swing of the main hand, as the game sends one with every dig tick (26.3: Punch).</summary>
+        internal bool BridgeSwing() => handler.SendAnimation(0, playerEntityID);
+
+        /// <summary>
+        /// Select a hotbar slot. Only a change goes, as the game sends it (Grim BadPacketsA flags the slot it already has).
+        /// </summary>
+        internal bool BridgeHold(int slot)
+        {
+            if (slot is < 0 or > 8)
+                return false;
+            return slot == CurrentSlot || ChangeSlot((short)slot);
+        }
+
+        /// <summary>
+        /// Swap a player inventory slot with a hotbar slot: one click with the number key over it (window 0, mode 2), on
+        /// the player's own inventory screen with every key up (client 4.2.9). Only while no window is open.
+        /// </summary>
+        internal bool BridgeSwapToHotbar(int slot, int hotbar)
+        {
+            if (hotbar is < 0 or > 8 || slot is < 9 or > 44 || !inventoryHandlingEnabled
+                || !inventories.TryGetValue(0, out Container? inventory) || inventories.Count > 1)
+                return false;
+
+            screen.Using();
+            ShowScreen();
+
+            int hotbarSlot = 36 + hotbar;
+            inventory.Items.TryGetValue(slot, out Item? moving);
+            inventory.Items.TryGetValue(hotbarSlot, out Item? held);
+            if (held is { IsEmpty: false })
+                inventory.Items[slot] = held;
+            else
+                inventory.Items.Remove(slot);
+            if (moving is { IsEmpty: false })
+                inventory.Items[hotbarSlot] = moving;
+            else
+                inventory.Items.Remove(hotbarSlot);
+
+            List<Tuple<short, Item?>> changed =
+            [
+                new((short)slot, held is { IsEmpty: false } ? held : null),
+                new((short)hotbarSlot, moving is { IsEmpty: false } ? moving : null),
+            ];
+            bool sent = handler.SendWindowSwap(0, slot, hotbar, changed, inventory.StateID);
+            DispatchBotEvent(bot => bot.OnInventoryUpdate(0));
+            return sent;
+        }
+
+        /// <summary>
+        /// Look this way. With terrain the tick's move carries it, as every look; without terrain (a fishing client holds
+        /// only the entities) the standing player's move carries it (BridgeStand), so a mode can still aim. Nothing else of
+        /// the client ever sends a look without terrain.
+        /// </summary>
+        internal void BridgeLook(float yaw, float pitch)
+        {
+            lock (locationLock)
+            {
+                if (terrainAndMovementsEnabled)
+                {
+                    _yaw = yaw;
+                    _pitch = pitch;
+                }
+                else
+                {
+                    bridgeLookWithoutTerrain = (yaw, pitch);
+                }
+            }
+        }
+
+        /// <summary>
+        /// A version 4 mode client (its variable set) without terrain stands as the game's player does, from its join on:
+        /// its moves go as a standing player's and a teleport is answered with the position and look (as with terrain).
+        /// Nothing changes for a client with terrain, or for a client without a mode's variable.
+        /// </summary>
+        internal void BridgeStand(bool on)
+        {
+            bridgeStanding = on;
+            handler.SetStandingWithoutTerrain(on && !terrainAndMovementsEnabled);
+        }
+
+        /// <summary>
+        /// Before a mode goes to work: a sneak key another bot left down (AntiAFK while the mode waited) goes up, as the
+        /// game's player lets go of shift; the mode's own sneak (its idle action) is not touched.
+        /// </summary>
+        internal void BridgeReleaseSneak()
+        {
+            if (sneakKeyDown && !bridgeSneak)
+                SendEntityAction(EntityActionType.StopSneaking);
+        }
+
+        /// <summary>
+        /// Hold the back key (1), the forward key (2) or neither (0) for mining's step back and return: the player walks
+        /// where it looks without turning, as with the game's keys (a walk would turn it toward its waypoint).
+        /// </summary>
+        internal void BridgeStepKeys(int key)
+        {
+            bridgeStepKey = key is 1 or 2 ? key : 0;
+        }
+
+        /// <summary>The server placed the player; with terrain, the physics stands it in a loaded chunk.</summary>
+        internal bool StandsInWorld => locationReceived && (!terrainAndMovementsEnabled || physicsInitialized);
+
+        /// <summary>The player stands on the ground (the physics' last move); without terrain the server's word holds.</summary>
+        internal bool OnGround => !physicsInitialized || playerPhysics.OnGround;
+
+        /// <summary>The player's eyes are in water (the physics' environment).</summary>
+        internal bool EyesInWater => physicsInitialized && playerPhysics.InWater;
+
+        /// <summary>The sneak key is down for the server (the physics crouches: eyes at 1.27).</summary>
+        internal bool SneakKeyDown => sneakKeyDown;
+
+        /// <summary>Ticks to break this block with this item in hand now, as the game counts them (0 instant, -1 never).</summary>
+        internal int DigTicks(Material block, Item? tool)
+        {
+            inventories.TryGetValue(0, out Container? inventory);
+            Item? helmet = null;
+            inventory?.Items.TryGetValue(5, out helmet);
+            return MiningCalculator.ComputeDigTicks(block, tool, helmet, playerEffects, playerAttributes, EyesInWater,
+                isOnGround: true, protocolversion);
+        }
+
+        /// <summary>The player's entity id (the owner a fishing bobber names).</summary>
+        internal int PlayerEntityId => playerEntityID;
 
         /// <summary>
         /// Check if the player has approximately reached a waypoint.
@@ -5529,7 +5752,26 @@ namespace MinecraftClient
         /// <param name="sequenceId">Sequence ID</param>
         public void OnBlockChangeAck(int sequenceId)
         {
-            this.sequenceId = sequenceId;
+            // The server acknowledges what it handled; the count goes on from the client's own (client 4.3.0: before, it
+            // went back to the acknowledged number, so the next action repeated it).
+            this.sequenceId = Math.Max(this.sequenceId, sequenceId);
+        }
+
+        /// <summary>
+        /// The sequence of the next block action (1.19+: use, place, start or finish a dig), as the game numbers them: 1,
+        /// 2, 3, ... in each world it joins or respawns into (client 4.3.0: before, the first was 0 and an acknowledgement
+        /// set the count back, so numbers repeated; Grim BadPacketsH expects each to be the last plus one). An abort, a
+        /// drop and a release carry none (0).
+        /// </summary>
+        private int NextSequence() => ++sequenceId;
+
+        /// <summary>A new world (a join, a respawn into another dimension): the block action sequence starts again.</summary>
+        private void RestartSequence(string? worldName)
+        {
+            if (worldName == sequenceWorld)
+                return;
+            sequenceWorld = worldName;
+            sequenceId = 0;
         }
 
         /// <summary>

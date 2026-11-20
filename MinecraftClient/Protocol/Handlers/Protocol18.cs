@@ -105,6 +105,9 @@ namespace MinecraftClient.Protocol.Handlers
         private bool lastSentHorizontalCollision;
         private bool positionSentThisTick;
         private int positionReminder;
+
+        // Agent bridge version 4: a mode's client without terrain stands still as the game's player does (moves sent).
+        private volatile bool standingWithoutTerrain;
         private readonly PlayerKeys playerKeys; // the keys the server is told about: Player Input, sneaking, sprinting
         private int? ownEntityId; // the player's entity id (Join Game)
         private long chunkBatchStartTime;
@@ -1708,7 +1711,7 @@ namespace MinecraftClient.Protocol.Handlers
                         // ping (Grim puts a transaction on each side of the teleport). Config.Main.Advanced
                         // .TemporaryFixBadpacket sent a later, forced move for this; the game's own answer replaces it.
                         foreach ((PacketTypesOut replyType, byte[] reply) in TeleportReplies(protocolVersion, dataTypes,
-                                     teleport, location, yaw, pitch, handler.GetTerrainEnabled()))
+                                     teleport, location, yaw, pitch, handler.GetTerrainEnabled() || standingWithoutTerrain))
                             SendPacket(replyType, reply);
                     }
                     break;
@@ -6010,7 +6013,7 @@ namespace MinecraftClient.Protocol.Handlers
             if (currentState != CurrentState.Play)
                 return false;
 
-            if (handler.GetTerrainEnabled())
+            if (handler.GetTerrainEnabled() || standingWithoutTerrain)
             {
                 bool legacyMovementCadence = protocolVersion < MC_1_9_Version;
                 bool supportsHorizontalCollision = protocolVersion >= MC_1_21_5_Version;
@@ -6576,6 +6579,72 @@ namespace MinecraftClient.Protocol.Handlers
                 return false;
             }
         }
+
+        /// <inheritdoc/>
+        public bool SendWindowSwap(int windowId, int slotId, int hotbar, List<Tuple<short, Item?>> changedSlots, int stateId)
+        {
+            if (hotbar is < 0 or > 8 || protocolVersion < MC_1_9_Version)
+                return false;
+            try
+            {
+                short actionNumber;
+                lock (window_actions)
+                {
+                    if (!window_actions.ContainsKey(windowId))
+                        window_actions[windowId] = 0;
+                    actionNumber = (short)(window_actions[windowId] + 1);
+                    window_actions[windowId] = actionNumber;
+                }
+
+                List<byte> packet = new();
+                if (protocolVersion >= MC_1_21_2_Version)
+                    packet.AddRange(DataTypes.GetVarInt(windowId));
+                else
+                    packet.Add((byte)windowId);
+                if (protocolVersion >= MC_1_17_1_Version)
+                    packet.AddRange(DataTypes.GetVarInt(stateId));
+                packet.AddRange(dataTypes.GetShort((short)slotId));
+                packet.Add((byte)hotbar); // Button: the hotbar slot's number key
+                if (protocolVersion < MC_1_17_Version)
+                    packet.AddRange(dataTypes.GetShort(actionNumber));
+                packet.AddRange(DataTypes.GetVarInt(2)); // Mode 2: swap with a hotbar slot
+
+                if (protocolVersion >= MC_1_17_Version)
+                {
+                    packet.AddRange(DataTypes.GetVarInt(changedSlots.Count));
+                    foreach (var slot in changedSlots)
+                    {
+                        packet.AddRange(dataTypes.GetShort(slot.Item1));
+                        packet.AddRange(protocolVersion >= MC_1_21_5_Version
+                            ? dataTypes.GetHashedItemSlot(slot.Item2, itemPalette)
+                            : dataTypes.GetItemSlot(slot.Item2, itemPalette));
+                    }
+                }
+
+                // The cursor stays as it is: empty (before 1.17 the clicked slot's item, which the swap moves away).
+                Item empty = new(ItemType.Null, 0, null);
+                packet.AddRange(protocolVersion >= MC_1_21_5_Version
+                    ? dataTypes.GetHashedItemSlot(protocolVersion >= MC_1_17_Version ? empty : changedSlots[1].Item2, itemPalette)
+                    : dataTypes.GetItemSlot(protocolVersion >= MC_1_17_Version ? empty : changedSlots[1].Item2, itemPalette));
+
+                return playerKeys.WindowPacket(PacketTypesOut.ClickWindow, packet.ToArray());
+            }
+            catch (SocketException)
+            {
+                return false;
+            }
+            catch (System.IO.IOException)
+            {
+                return false;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+
+        /// <inheritdoc/>
+        public void SetStandingWithoutTerrain(bool standing) => standingWithoutTerrain = standing;
 
         public bool SendWindowAction(int windowId, int slotId, WindowActionType action, Item? item,
             List<Tuple<short, Item?>> changedSlots, int stateId)

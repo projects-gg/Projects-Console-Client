@@ -11,11 +11,14 @@ Code: `MinecraftClient/ChatBots/AgentBridge.cs` (events and operations),
 `AgentBridgeItems.cs` (items), `Protocol/Message/ChatClick.cs` (click actions of chat components),
 `ConsoleKinds.cs` and `AutoRespond.cs` (version 2's console kinds and strict values).
 Tests: `MinecraftClient.Tests/AgentBridgeTests.cs`, `AgentBridgeV2Tests.cs`, `ConsoleKindsTests.cs`,
-`AutoRespondVarsTests.cs`.
+`AutoRespondVarsTests.cs`. Version 4: `AgentAuto.cs` (its variables, settings and the mining blocks), `AgentAutoHost.cs` (what the
+modes need from the client, the item rules), `AgentFishing.cs`, `AgentMining.cs`; tests `AgentAutoTests.cs`.
 
 Contract version: **2** (the `v` of `hello`): version 1 as described below, and the additions in
 [Version 2](#version-2-client-411). A host that asks for movement (`MCC_AGENT_MOVE=1`) gets **3**: version 2 and
-[Version 3](#version-3-client-420-movement).
+[Version 3](#version-3-client-420-movement). A host that asks for auto-fishing or auto-mining (`MCC_AGENT_FISH=1`,
+`MCC_AGENT_MINE=1`) gets **4**: [Version 4](#version-4-client-430-auto-fishing-and-auto-mining), with version 3 when it asked for
+movement too.
 
 ## Activation
 
@@ -63,7 +66,7 @@ The bridge runs only when the host names both descriptors in the environment:
 | Event | Fields | When |
 | --- | --- | --- |
 | `hello` | `v` (contract version), `pid` | once per process, when the channel opens |
-| `joined` | `user`, `protocol` | the bot joined the game (also after every reconnect) |
+| `joined` | `user`, `protocol` (4.3.0: `ip`, `port`) | the bot joined the game (also after every reconnect) |
 | `left` | `reason` (`ConnectionLost`, `InGameKick`, `LoginRejected`, `UserLogout`) | the connection ended |
 | `chat` | `type`, `text`, `clicks` | every chat, system and action bar line |
 | `players` | `list` | the tab list changed (checked once a second, at most 200 names) |
@@ -561,6 +564,193 @@ A new session starts idle and not sneaking; a disconnection ends what ran withou
 | `not_allowed` | a name not in `MCC_AGENT_FOLLOW`, or the account's own |
 | `not_visible` | that player is not in sight (64 blocks) |
 
+## Version 4 (client 4.3.0): auto-fishing and auto-mining
+
+For the cloud's modes (projects-studio `services/cloud-afk/README.md`, "Auto-fishing and auto-mining"; `services/afk-host/README.md`,
+same name): a cloud account fishes on its own, or breaks the blocks that appear in front of it (a cobblestone generator), where it
+stands and looks. Each mode starts only with its own variable, which only `afk-host` sets, and only together with the bridge's
+descriptors: the desktop launcher and the phone never set them, no configuration key or console command turns a mode on, and
+without the variables nothing below exists (the operations are `unknown_op`, no event changes, `hello` is as before).
+
+| Variable | Meaning |
+| --- | --- |
+| `MCC_AGENT_FISH` | `1`: `hello.v` is 4, `fish` and `aim` are known, `fish` and `catch` events are written |
+| `MCC_AGENT_MINE` | `1`: `hello.v` is 4, `mine` and `aim` are known, `mine` and `dug` events are written |
+
+`hello` then carries `features`, the parts the host asked for: `["move", "fish", "mine"]` or fewer. Version 4 includes version 3
+when `MCC_AGENT_MOVE=1` is set too. The modes' events are written whatever `MCC_AGENT_EVENTS` names.
+
+What a mode needs from the client's configuration: fishing entity handling (the bobber) and inventory handling; mining terrain
+handling and inventory handling (`afk-host` starts a fishing client without terrain, a mining client without entities). Without them
+a `start` is refused (`entities_disabled`, `terrain_disabled`, `inventory_disabled`). On a server older than 1.9 a `start` is
+acknowledged and the mode says `off` with `reason: "version"`.
+
+A mode's client without terrain (`afk-host`'s fishing client) stands as the game's player does from its join on: its moves go as a
+standing player's, where the server placed it, on the ground (its position once a second, its look when it changes), and every
+teleport is answered with the position and look, as a client with terrain answers it. A client without terrain otherwise sends no
+move: an anticheat then flags a mode's looks (Grim BadPacketsE: 20 looks in a row without a position; BadPacketsR, experimental: no
+position for 2 seconds), and after a teleport answered without the position (Grim on a server before 26.3 waits for it) the first
+position the client sends is a jump from where the anticheat still has it (e2e: Simulation and GroundSpoof when a mode started after
+a teleport). A client without a mode's variable sends what it sent before.
+
+### Operations
+
+```json
+{"op":"fish","id":"f1","do":"start","rod":{"switch":true,"keep":5},"full":"wait","look":false}
+{"op":"mine","id":"m1","do":"start","blocks":["minecraft:cobblestone","minecraft:stone"],"tool":{"switch":true,"keep":5},"full":"keep","idle":{"look":true,"sneak":false,"jump":false,"step":true,"min":60,"max":180}}
+{"op":"fish","id":"f2","do":"pause","why":"trade"}
+{"op":"mine","id":"m2","do":"resume"}
+{"op":"fish","id":"f3","do":"stop"}
+{"op":"aim","id":"a1","yaw":-90,"pitch":35}
+```
+
+| Op | Fields | Does |
+| --- | --- | --- |
+| `fish`, `mine` | `do`: `start` | starts the mode where the account stands and looks (the anchor). A `start` while the mode runs only takes the new settings (the anchor stays), which is how the host passes a changed setting |
+| | `do`: `stop` | stops it (`off`); a bobber out is reeled in, a dig in progress aborted |
+| | `do`: `pause`, `why`: `player` (default) or `trade` | pauses it (`paused`); a player's pause reels a bobber in |
+| | `do`: `resume` | ends any pause and anchors the spot again (where it stands and looks now) |
+| `aim` | `yaw` (-180 to 180), `pitch` (-90 to 90) | the mode's new look, rounded to a tenth of a degree: the account turns with the next move. Fishing reels in a bobber out and casts again toward it; mining aborts a dig and starts the next at the new look. Only while a mode is not `off` (also while paused), else `mode_off` |
+
+A `start`'s settings, all optional (the cloud's defaults):
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `rod` (fishing), `tool` (mining) | `{"switch": true, "keep": 5}` | `keep` 1-100: the durability left at which a rod or pickaxe is put away. `switch`: take another one from the inventory, the hotbar first |
+| `full` | `"wait"` | `wait`: wait (`waiting`, `full`) while the inventory has no room for what comes next; `keep`: go on, what does not fit falls. The cloud's `command` is the host's: it sends the command itself and gives the client `wait` |
+| `look` (fishing) | `false` | a small turn of the head and back between casts |
+| `blocks` (mining) | all of `fixed.miningBlocks` | 1-33 distinct ids of the cloud's `fixed.miningBlocks` (stone kinds and ores); any other id is `bad_block`. The client keeps its own copy of the list as a second line (a test holds it equal to the contract's) |
+| `idle` (mining) | all `false`, `min` 60, `max` 180 | `look`, `sneak`, `jump`, `step` (one block back and return, only over a safe, solid floor; else not done): one of those enabled, at a random time every `min`-`max` seconds (20 ≤ `min` ≤ `max` ≤ 3600), only between blocks |
+
+- **One mode at a time** (one hand, one look): a `start` of one while the other is not `off` is `other_mode`; the running one goes on
+  (the machine runs one mode per account anyway; this is the second line).
+- **AntiAFK and a mode**: the machine keeps the client's AntiAFK as the account set it (sneak only, its delays). It stays silent only
+  while a mode is at work (`on`, or a `no_water` try while waiting): its clock stops. While a mode is paused, waiting or stopped it
+  runs as usual, so a server does not kick the account. Before a mode's first action after it was not at work (a start, a resume,
+  the end of a wait), a sneak key AntiAFK left down goes up and the action waits three ticks; the anchor's look comes back before
+  a cast or a start.
+- Every operation gets one `ack` or `err`. They count in version 1's rate (10 a second).
+- `pause` and `resume` of a mode that is `off`: `mode_off`. `stop` of a mode that is `off`: `ack`.
+
+### Events
+
+```json
+{"e":"fish","seq":120,"at":1792844200000,"state":"on","doing":"wait","rod":{"item":"minecraft:fishing_rod","dur":58,"max":64}}
+{"e":"catch","seq":121,"at":1792844213000,"item":"minecraft:cod","n":1,"cat":"fish","ench":false}
+{"e":"fish","seq":140,"at":1792844300000,"state":"waiting","reason":"rod_low","rod":{"item":"minecraft:fishing_rod","dur":5,"max":64}}
+{"e":"mine","seq":150,"at":1792844400000,"state":"on","tool":{"item":"minecraft:iron_pickaxe","dur":231,"max":250},"target":{"id":"minecraft:cobblestone","x":118,"y":-59,"z":99}}
+{"e":"dug","seq":151,"at":1792844400450,"block":"minecraft:cobblestone","n":1}
+```
+
+| Event | Fields | When |
+| --- | --- | --- |
+| `fish` | `state`, `reason`?, `doing`?, `rod` | on every change of the state, its reason, `doing` or the rod in hand; the rod's wear alone at most every 10 seconds |
+| `mine` | `state`, `reason`?, `tool`, `target` | the same, with `target` |
+| `catch` | `item`, `n`, `cat`, `ench` | each item a reel brought into the inventory (the host aggregates) |
+| `dug` | `block`, `n` | each block mining finished breaking (`n` 1) |
+
+- `state`: `off`, `on`, `paused`, `waiting`. `reason`: with `off` only `version` (the machine's own off reasons are its own); with
+  `paused` `player`, `trade` (the host's `pause`), `window` (a menu the server opened; it goes on by itself when the menu closes) or
+  `moved` (a teleport, a death, a push of more than half a block from the anchor; it needs a `resume`); with `waiting` `full`,
+  `no_rod`, `rod_low` (rods only at their keep), `no_water` (fishing) or `no_tool`, `tool_low`, `no_target` (mining). A waiting cause
+  goes by itself: room in the inventory, a rod or pickaxe given, a block in sight.
+- `doing` (fishing, with `on`): `cast` (the bobber flies), `wait` (it rests in water), `reel` (reeled in, the next cast follows).
+- `rod`, `tool`: the item in the main hand when it is a rod or a pickaxe, `{item, dur, max}` (durability left and maximum: the stack's
+  `max_damage` or the type's default; an unbreakable one has all of it), else `null`.
+- `target` (mining): the block of the list the look hits, `{id, x, y, z}`, or `null`; a generator's refill (a moment of air) does not
+  make it `null` (only 2 seconds without one). Only the player's own watchers may see it (the host masks positions).
+- `cat`: the game's fishing loot: `fish` (cod, salmon, tropical fish, pufferfish), `treasure` (bow, enchanted book, enchanted rod, name
+  tag, nautilus shell, saddle), `junk` (the rest). `ench`: the item carries an enchantment (a book's stored ones count).
+- A new session (`joined`) anchors the spot where the account joined; the mode goes on (a `paused` `player`, `trade` or `moved`
+  stays paused, `window` ends).
+
+### Fishing
+
+- **Cast and reel**: a use of the main hand's rod (Use Item; before 26.3 followed by the swing the game sends; on 26.3 the server swings
+  the arm itself), before the tick's move, at a look the server already has: a look goes in an earlier tick (Grim BadPacketsJ compares
+  Use Item's rotation with the last one sent).
+- **The bobber** is the fishing bobber whose spawn data names the account. A **bite** is its own "biting" flag (FishingHook's entity data:
+  index 8 on 1.16.x, 9 from 1.17 to 26.3, after the entity's own seven or eight entries); before 1.16 the bobber pulled down (a velocity
+  of -0.2 or less) or its splash within 1.5 blocks. The reel follows 150-450 ms after the bite (the game leaves 1-2 seconds), the next
+  cast 0.6-1.6 seconds after a reel.
+- **In water**: with terrain, the block at the bobber is water; without terrain (the cloud's fishing client), the bobber stopped going
+  across but the server still moves it (it bobs in water; on the ground it lies still and no move comes).
+- **A failed cast**: no bobber within 2 seconds, a bobber at rest out of water or never at rest within 5 seconds, no bite within 60
+  seconds. After five in a row the mode waits (`no_water`) and tries one cast every 30 seconds; a bobber at rest in water says `on`
+  again. A bobber that caught a mob or an item is reeled in (or, with 5 or less left on the rod, freed by holding another slot a
+  moment: such a reel wears a rod by up to 5).
+- **Catches**: the first item of the game's fishing loot (fish, treasure or junk) that came into the inventory (main inventory, hotbar,
+  off hand) within 4 seconds of a reel: more of it in a slot, or it in a slot that was empty. A reel brings one stack; anything else
+  that comes in meanwhile (a server's gift, a pick-up), an item that only moved and a rod that only wore are not catches. A catch
+  that does not reach the account (it fell short of a spot away from the water, or the inventory is full with `full: keep`) is not
+  counted: the account should stand at the water's edge.
+- **The rod**: never one a reel could break: it is used while its durability left is above `keep` and above 2 (a reel from the
+  ground wears it by 2, FishingHook.retrieve). With `switch` the best other one (the hotbar first; then Lure and Luck of the Sea,
+  then the least worn): a hotbar slot change, or one click with the hotbar's number key over a main inventory slot (window 0, mode 2),
+  each some ticks before the next cast and never in a use's tick.
+- `look`: before most casts the head turns a little (up to 12° across, 6° up or down) and comes back to the anchor's look, a few ticks
+  before the cast.
+
+### Mining
+
+Not the client's AutoDig: the packets are the game's, in its order and timing (what the Projects anticheat, Grim `e42020a`, checks):
+
+- **Target and face**: the first block the look hits within 4.5 blocks from the eyes (1.62, sneaking 1.27), when it is one of the list;
+  every block but air and fluids stops the look as a whole one (a torch or a slab in front means no target). The face is the one the
+  look enters it by (PositionBreakA).
+- **A block**: a start (status 0, the face, the next sequence) and a swing, both before the tick's move (Post); a swing every tick until
+  the finish (NoSwingBreak); the finish (status 2) with a swing `n` ticks after the start, where the game finishes `n - 1` ticks after
+  it (`n` from the tool, Efficiency, Haste, Mining Fatigue, the block break speed attribute, the water, on the ground; FastBreak's rule
+  for a start and its finish); the next start 6-9 ticks after a finish (the game's five ticks of destroy delay, then up to three at
+  random; FastBreak's rule between finishes). An instant break is a start alone, with the same delay after it.
+- **An abort** (status 1) faces down and carries no sequence (PositionBreakB, BadPacketsH): when the block, the hand or the look changes
+  mid-dig; a menu cuts a dig and its abort goes once the menu is closed, as the game sends it.
+- **After a finish** the next start waits for the server's word on that block (a generator may refill it at once; at most 10
+  seconds): until then the client's view is the block as it was and the anticheat's is air (Grim AirLiquidBreak; the e2e saw a
+  server's hiccup at another player's quit delay that word past a second).
+- **The pickaxe**: used while its durability left is above `keep` (a block wears it by 1 at most). With `switch`, the fastest for the
+  block among the hotbar's, else the main inventory's (the least worn among equals), only between blocks, a few ticks before a start.
+- **The look** stays the anchor's from a start to its finish; a look (an `aim`, the idle look) comes back at least three ticks before
+  the next start (RotationBreak).
+- **Idle actions**, only between blocks: the head turns 5-15° and back; the sneak key goes down for 8-20 ticks; one jump (and then on
+  the ground again); a step back with the back key, without turning, then the same keys forward: the same distance back to the anchor
+  (only when the block behind is free at the feet and the head over a solid floor that is not magma, a cactus, fire, powder snow or
+  scaffolding). Back more than 0.1 blocks off the anchor: `paused`, `moved`.
+- **Room**: what the block drops with the tool (the game's loot: stone drops cobblestone, ores their raw ore or gem, with Silk Touch the
+  block) must fit a stack with room or an empty slot, unless `full` is `keep`.
+- **Nothing of the list in sight** for 10 seconds: `waiting`, `no_target`; the look is checked again every 30 seconds.
+
+### Client changes for every user
+
+- The block action sequence (1.19+: use, place, start and finish a dig) counts as the game's: 1, 2, 3, ... in each world joined or
+  respawned into. Before, the first was 0 and an acknowledgement set the count back to the acknowledged number, so the next action
+  repeated it (Grim BadPacketsH, experimental). An abort of the client's own dig command carries none.
+- A drop of the held item (`DropSelectedItem`) goes at 0, 0, 0, facing down, without a sequence, as the game's (Grim BadPacketsL flagged
+  the player's position and a sequence).
+
+### The address it reached (`joined`)
+
+```json
+{"e":"joined","seq":2,"at":1792844158000,"user":"AfkBot_1","protocol":777,"ip":"45.94.169.25","port":25565}
+```
+
+From 4.3.0 the bridge's `joined` (every host, with or without a mode) carries the address the connection reached, after the
+client's own SRV and DNS lookups (and a transfer): `ip`, the peer's IP as text (an IPv4 address mapped into IPv6 written as
+IPv4; IPv6 as .NET writes it), and `port`. Both are left out when the client knows none. The launcher bridge's `joined` line gains
+`ip` the same way (null when unknown); its `port` stays the port the client connected to. Through a proxy they are the proxy's.
+The machine compares them with the address it checked before it started the client and refuses a mode, or halts a blocked server,
+when the client's own lookup reached another one (DNS rebinding, a cut SRV answer). Additive: an older host ignores them.
+
+### New `err` reasons
+
+| Reason | Meaning |
+| --- | --- |
+| `other_mode` | a `start` while the other mode is not `off` |
+| `mode_off` | `pause`, `resume` or `aim` while no mode (or that mode) runs |
+| `bad_block` | a `blocks` id outside the cloud's list |
+| `entities_disabled`, `terrain_disabled` | fishing without entity handling, mining without terrain handling |
+| `inventory_disabled` | a mode without inventory handling (already known as `op: "init"`) |
+
 ## Client 4.2.3: heads and styled text
 
 For the cloud's inventory view (projects-studio `services/cloud-afk/README.md`, "Inventory"): a player head's own skin
@@ -846,7 +1036,9 @@ a core per idle client against 0.84 %, 60 context switches a second against 140;
 - Without the two descriptor variables nothing of the agent bridge runs, and the only visible change for other
   users is the stdout hardening above (only with `MCC_LAUNCHER_BRIDGE`). Version 2's console kinds and strict values
   run only with their own variables (`MCC_CONSOLE_KINDS`, `MCC_MATCH_VARS`), version 3's movement only with
-  `MCC_AGENT_MOVE=1`.
+  `MCC_AGENT_MOVE=1`, version 4's modes only with `MCC_AGENT_FISH=1` or `MCC_AGENT_MINE=1`.
+- Since 4.3.0, for every user: the block action sequence counts as the game's and a drop of the held item goes as the game's
+  ("Version 4", "Client changes for every user"). Movement, AntiAFK and plain AFK send what they sent before.
 - Since 4.1.2, for every user: from 1.21.6 an entity action goes to the server in that version's form (sneaking is
   the Player Input packet's sneak key, the other Player Command ids moved down by two). Before, AntiAFK's "sneak" sent
   "leave bed" and "start sprinting" to 1.21.6 and later servers.

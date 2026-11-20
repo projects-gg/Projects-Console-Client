@@ -125,12 +125,15 @@ namespace MinecraftClient.ChatBots
 
         public override void AfterGameJoined()
         {
+            // "ip": the address the connection reached, after the client's own SRV and DNS lookups ("port", as before, is the
+            // port it connected to); null when none is known (client 4.3.0, additive).
             Emit("joined", new()
             {
                 ["user"] = GetUsername(),
                 ["host"] = GetServerHost(),
                 ["port"] = GetServerPort(),
                 ["protocol"] = GetProtocolVersion(),
+                ["ip"] = Handler.GetConnectedEndPoint()?.Ip,
             });
         }
 

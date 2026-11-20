@@ -148,11 +148,13 @@ namespace MinecraftClient.ChatBots
                 walkSearch = null;
                 walkCancel?.Dispose();
                 walkCancel = null;
+                if (Silenced(false))
+                    return; // a mode went to work meanwhile: no walk under it
                 FinishTurn(StartWalk(path));
                 return;
             }
 
-            if (!Due(IsScreenOpen()))
+            if (!Due(Silenced(IsScreenOpen())))
                 return;
             DoAntiAfkStuff();
             count = 0;
@@ -170,6 +172,12 @@ namespace MinecraftClient.ChatBots
         /// then, and an anticheat flags a window click made while sneaking or walking (client 4.2.9: Grim MultiActionsC
         /// cancelled an AFK account's trade clicks while AntiAFK held its sneak key). It goes on when the screen closes.
         /// </summary>
+        /// <summary>
+        /// The bot's clock stops: a screen is open, or an agent bridge version 4 mode is at work (client 4.3.0: its own
+        /// actions keep the account active; AntiAFK runs while the mode is paused, waiting or stopped).
+        /// </summary>
+        internal static bool Silenced(bool screenOpen) => screenOpen || AgentAuto.ModeWorking;
+
         internal bool Due(bool screenOpen)
         {
             if (screenOpen)

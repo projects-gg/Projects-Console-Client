@@ -50,6 +50,12 @@ namespace MinecraftClient.ChatBots
 
             /// <summary>Version 3's <c>move</c> events: only with <see cref="AgentMovement.MoveEnvVar"/>, never in <c>All</c>.</summary>
             Movement = 64,
+
+            /// <summary>
+            /// Version 4's <c>fish</c>, <c>catch</c>, <c>mine</c> and <c>dug</c> events: only with a mode's variable
+            /// (<see cref="AgentAuto.FishEnvVar"/>, <see cref="AgentAuto.MineEnvVar"/>), never in <c>All</c>.
+            /// </summary>
+            Auto = 128,
         }
 
         /// <summary>The groups <paramref name="value"/> names (unknown names count for nothing); null: all of them.</summary>
@@ -80,8 +86,12 @@ namespace MinecraftClient.ChatBots
         internal static EventGroups ReportedGroups(string? events, bool movement) =>
             ParseEventGroups(events) | (movement ? EventGroups.Position | EventGroups.Movement : EventGroups.None);
 
-        private static readonly EventGroups reportedGroups =
-            ReportedGroups(Environment.GetEnvironmentVariable(EventsEnvVar), AgentMovement.Enabled);
+        /// <summary>As above, plus version 4's events for a host that asked for a mode.</summary>
+        internal static EventGroups ReportedGroups(string? events, bool movement, bool auto) =>
+            ReportedGroups(events, movement) | (auto ? EventGroups.Auto : EventGroups.None);
+
+        private static readonly EventGroups reportedGroups = ReportedGroups(Environment.GetEnvironmentVariable(EventsEnvVar),
+            AgentMovement.Enabled, AgentAuto.Fishing || AgentAuto.Mining);
 
         /// <summary>
         /// A host that names event groups speaks version 2: window content is reported once a tick, and after the
@@ -137,6 +147,10 @@ namespace MinecraftClient.ChatBots
 
         // Version 3: movement, for a host that asked for it.
         private AgentMovement? movement;
+
+        // Version 4: auto-fishing and auto-mining, each for a host that asked for it; one runs at a time.
+        private AgentFishing? fishing;
+        private AgentMining? mining;
         private long handledStop;
         private string? lastFacing;
 
@@ -219,15 +233,32 @@ namespace MinecraftClient.ChatBots
             ChatClicks.Collecting = Reports(EventGroups.Chat);
             if (AgentMovement.Enabled)
                 movement = new AgentMovement(new MoveHost(Handler), EmitMove);
+            if (AgentAuto.Fishing || AgentAuto.Mining)
+            {
+                AutoHost autoHost = new(Handler, () => window is not null);
+                if (AgentAuto.Fishing)
+                    fishing = new AgentFishing(autoHost, state => EmitAuto("fish", state), EmitCatch);
+                if (AgentAuto.Mining)
+                    mining = new AgentMining(autoHost, state => EmitAuto("mine", state), EmitDug);
+            }
 
             if (!helloSent)
             {
                 helloSent = true;
-                int version = movement is null ? ProtocolVersion : MovementProtocolVersion;
+                bool auto = fishing is not null || mining is not null;
+                int version = auto ? AgentAuto.ProtocolVersion : movement is null ? ProtocolVersion : MovementProtocolVersion;
+                List<string>? features = auto ? AgentAuto.FeatureNames(AgentAuto.Features) : null;
                 channel.Emit("hello", writer =>
                 {
                     writer.WriteNumber("v", version);
                     writer.WriteNumber("pid", Environment.ProcessId);
+                    if (features is not null)
+                    {
+                        writer.WriteStartArray("features");
+                        foreach (string feature in features)
+                            writer.WriteStringValue(feature);
+                        writer.WriteEndArray();
+                    }
                 });
             }
 
@@ -254,14 +285,29 @@ namespace MinecraftClient.ChatBots
             settleUntilTick = 0;
             joined = true;
 
+            // The address the connection reached (after the client's own SRV and DNS lookups): the machine refuses a mode,
+            // and halts a blocked server, when it is not the address the machine checked (version 4; additive).
+            (string Ip, int Port)? peer = Handler.GetConnectedEndPoint();
             channel.Emit("joined", writer =>
             {
                 writer.WriteString("user", GetUsername());
                 writer.WriteNumber("protocol", GetProtocolVersion());
+                if (peer is { } reached)
+                {
+                    writer.WriteString("ip", reached.Ip);
+                    writer.WriteNumber("port", reached.Port);
+                }
             });
             lastFacing = null;
             handledStop = channel.LatestStopArrival;
             movement?.Joined();
+            // Version 4: a mode's client without terrain stands as the game's player from its join on (before the server
+            // places it): every teleport is answered with the position and look, and its moves go as a standing player's,
+            // so the anticheat's view of where it stands is the server's when a mode starts.
+            if (fishing is not null || mining is not null)
+                Handler.BridgeStand(true);
+            fishing?.Joined();
+            mining?.Joined();
         }
 
         public override bool OnDisconnect(DisconnectReason reason, string message)
@@ -273,6 +319,8 @@ namespace MinecraftClient.ChatBots
             window = null;
             inventoryReported = false;
             movement?.Left();
+            fishing?.Left();
+            mining?.Left();
             DiscardQueuedOperations();
             channel.Emit("left", writer => writer.WriteString("reason", reason.ToString()));
             return false; // reporting only: AutoRelog and the host keep owning reconnects
@@ -293,9 +341,39 @@ namespace MinecraftClient.ChatBots
                 EmitWindowClose(open.Id, "server");
             }
 
-            // What moved stops ("reset"), sneaking ends.
+            // What moved stops ("reset"), sneaking ends; a mode pauses ("moved").
             movement?.Moved();
+            fishing?.Moved();
+            mining?.Moved();
         }
+
+        public override void OnDeath()
+        {
+            if (!active || !joined)
+                return;
+            fishing?.Moved();
+            mining?.Moved();
+        }
+
+        // Version 4: what auto-fishing watches (its bobber) and auto-mining (the block it broke).
+
+        public override void OnEntitySpawn(Entity entity) =>
+            fishing?.OnEntitySpawn(entity.ID, entity.Type, entity.ObjectData, entity.Location);
+
+        public override void OnEntityMove(Entity entity) => fishing?.OnEntityMove(entity.ID, entity.Location);
+
+        public override void OnEntityDespawn(Entity entity) => fishing?.OnEntityDespawn(entity.ID);
+
+        public override void OnEntityMetadata(Entity entity, Dictionary<int, object?> metadata) =>
+            fishing?.OnEntityMetadata(entity.ID, metadata);
+
+        public override void OnEntityVelocity(Entity entity, double velocityX, double velocityY, double velocityZ) =>
+            fishing?.OnEntityVelocity(entity.ID, velocityX, velocityY, velocityZ);
+
+        public override void OnSoundEffect(string? soundName, Location? location, int category, float volume, float pitch,
+            Entity? sourceEntity) => fishing?.OnSound(soundName, location ?? sourceEntity?.Location);
+
+        public override void OnBlockChange(Location location, Block block) => mining?.OnBlockChange(location, block.Type);
 
         /// <summary>The host asked for this group of events (<see cref="EventsEnvVar"/>).</summary>
         private bool Reports(EventGroups group) => (reported & group) != 0;
@@ -402,7 +480,11 @@ namespace MinecraftClient.ChatBots
                 return;
 
             if (inventoryId == 0)
+            {
                 inventoryDirty = true;
+                fishing?.OnInventoryChanged();
+                mining?.OnInventoryChanged();
+            }
 
             if (window is null || inventoryId != window.Id)
                 return;
@@ -458,7 +540,17 @@ namespace MinecraftClient.ChatBots
                 DiscardQueuedOperations();
 
             if (joined)
+            {
                 movement?.Tick();
+                // Version 4: a mode's held slot, click, use, dig and swing go here, before the tick's move.
+                fishing?.Tick();
+                mining?.Tick();
+            }
+
+            // AntiAFK stays silent while a mode is at work, and runs while it is paused, waiting or stopped (its Update comes
+            // first in the next tick).
+            if (fishing is not null || mining is not null)
+                AgentAuto.ModeWorking = joined && (fishing?.Working == true || mining?.Working == true);
 
             if (inventoryCooldown > 0)
                 inventoryCooldown--;
@@ -541,6 +633,8 @@ namespace MinecraftClient.ChatBots
 
             if (operation.Moves)
                 return movement is null ? "unknown_op" : movement.Start(operation);
+            if (operation.IsAuto)
+                return ExecuteAuto(operation);
 
             switch (operation.Op)
             {
@@ -640,6 +734,55 @@ namespace MinecraftClient.ChatBots
             }
 
             return "unknown_op";
+        }
+
+        /// <summary>
+        /// Version 4: start, stop, pause or resume a mode, or aim. One mode runs at a time (one hand, one look): a start
+        /// while the other is not off is <c>other_mode</c>. A start of a running mode takes its new settings.
+        /// </summary>
+        private string? ExecuteAuto(AgentOperation operation)
+        {
+            if (operation.Op == AgentOperation.Aim)
+            {
+                bool aimed = false;
+                if (fishing is { Active: true })
+                {
+                    fishing.Aim(operation.Yaw, operation.Pitch);
+                    aimed = true;
+                }
+
+                if (mining is { Active: true })
+                {
+                    mining.Aim(operation.Yaw, operation.Pitch);
+                    aimed = true;
+                }
+
+                return aimed ? null : "mode_off";
+            }
+
+            bool fish = operation.Op == AgentOperation.Fish;
+            if (fish ? fishing is null : mining is null)
+                return "unknown_op";
+
+            switch (operation.Do)
+            {
+                case "start":
+                    if (fish ? mining is { Active: true } : fishing is { Active: true })
+                        return "other_mode";
+                    return fish ? fishing!.Start(operation.Auto!) : mining!.Start(operation.Auto!);
+                case "stop":
+                    if (fish)
+                        fishing!.Stop();
+                    else
+                        mining!.Stop();
+                    return null;
+                case "pause":
+                    return fish ? fishing!.Pause(operation.Why!) : mining!.Pause(operation.Why!);
+                case "resume":
+                    return fish ? fishing!.Resume() : mining!.Resume();
+            }
+
+            return "bad_request";
         }
 
         /// <summary>
@@ -920,6 +1063,115 @@ namespace MinecraftClient.ChatBots
                     writer.WriteString("ended", state.Ended);
                 writer.WriteBoolean("sneak", state.Sneak);
             });
+        }
+
+        /// <summary>Version 4's <c>fish</c> or <c>mine</c> event: the mode's state, its rod or pickaxe, mining's target.</summary>
+        private void EmitAuto(string name, AutoState state)
+        {
+            if (!Reports(EventGroups.Auto))
+                return;
+
+            channel.Emit(name, writer =>
+            {
+                writer.WriteString("state", state.State);
+                if (state.Reason is not null)
+                    writer.WriteString("reason", state.Reason);
+                if (state.Doing is not null)
+                    writer.WriteString("doing", state.Doing);
+                writer.WritePropertyName(name == "fish" ? "rod" : "tool");
+                if (state.Tool is { } tool)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("item", tool.Item);
+                    writer.WriteNumber("dur", tool.Dur);
+                    writer.WriteNumber("max", tool.Max);
+                    writer.WriteEndObject();
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+
+                if (name == "mine")
+                {
+                    writer.WritePropertyName("target");
+                    if (state.Target is { } target)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("id", target.Id);
+                        writer.WriteNumber("x", target.X);
+                        writer.WriteNumber("y", target.Y);
+                        writer.WriteNumber("z", target.Z);
+                        writer.WriteEndObject();
+                    }
+                    else
+                    {
+                        writer.WriteNullValue();
+                    }
+                }
+            });
+        }
+
+        /// <summary>Version 4's <c>catch</c>: one item a reel brought in, its count, loot category and enchantment.</summary>
+        private void EmitCatch(string item, int count, string category, bool enchanted)
+        {
+            if (!Reports(EventGroups.Auto))
+                return;
+            channel.Emit("catch", writer =>
+            {
+                writer.WriteString("item", item);
+                writer.WriteNumber("n", count);
+                writer.WriteString("cat", category);
+                writer.WriteBoolean("ench", enchanted);
+            });
+        }
+
+        /// <summary>Version 4's <c>dug</c>: a block mining broke.</summary>
+        private void EmitDug(string block, int count)
+        {
+            if (!Reports(EventGroups.Auto))
+                return;
+            channel.Emit("dug", writer =>
+            {
+                writer.WriteString("block", block);
+                writer.WriteNumber("n", count);
+            });
+        }
+
+        /// <summary>The client as the version 4 modes see it (<see cref="IMineHost"/>).</summary>
+        private sealed class AutoHost(McClient client, Func<bool> windowOpen) : IMineHost
+        {
+            public int Protocol => client.GetProtocolVersion();
+            public bool Terrain => client.GetTerrainEnabled();
+            public bool Entities => client.GetEntityHandlingEnabled();
+            public bool Inventory => client.GetInventoryEnabled();
+            public bool PositionKnown => client.StandsInWorld;
+            public Location Position => client.GetCurrentLocation();
+            public float Yaw => client.GetYaw();
+            public float Pitch => client.GetPitch();
+            public bool ScreenOpen => client.IsScreenOpen();
+            public bool WindowOpen => windowOpen();
+            public int HeldSlot => client.GetCurrentSlot();
+            public int PlayerEntityId => client.PlayerEntityId;
+
+            public IReadOnlyDictionary<int, Item>? Items =>
+                client.GetInventoryEnabled() ? client.GetInventory(0)?.Items : null;
+
+            public bool OnGround => client.OnGround;
+            public bool Sneaking => client.SneakKeyDown;
+            public bool Walking => client.WalkingPath;
+            public bool Use() => client.BridgeUseItem();
+            public bool Hold(int slot) => client.BridgeHold(slot);
+            public bool Swap(int slot, int hotbar) => client.BridgeSwapToHotbar(slot, hotbar);
+            public void Look(float yaw, float pitch) => client.BridgeLook(yaw, pitch);
+            public void ReleaseSneak() => client.BridgeReleaseSneak();
+            public Material BlockAt(int x, int y, int z) => client.GetWorld().GetBlock(new Location(x, y, z)).Type;
+            public int DigTicks(Material block, Item? tool) => client.DigTicks(block, tool);
+            public bool Dig(int status, Location block, Direction face) => client.BridgeDig(status, block, face);
+            public bool Swing() => client.BridgeSwing();
+            public void Jump() => client.BridgeJump();
+            public void Sneak(bool on) => client.SetBridgeSneak(on);
+            public void StepKey(int key) => client.BridgeStepKeys(key);
         }
 
         /// <summary>The client as the movement controller sees it (<see cref="IMoveHost"/>).</summary>
